@@ -1,18 +1,37 @@
 
 
 
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-
+import os
+from werkzeug.utils import secure_filename
 app = Flask(__name__)
+CORS(app)
 
-UPLOAD_FOLDER = '/path/to/the/uploads'
+UPLOAD_FOLDER = '../../uploads'  # relative to index.py
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
 @app.route('/uploadaudio', methods=['POST'])
 def upload_audio():
+   print("im here")
    uploaded_file = request.files.get('my-file')
    if not uploaded_file:
-        return "No file received", 400
+        return jsonify({'message': 'No file received'}), 400
+
+   if uploaded_file.filename == '' or not allowed_file(uploaded_file.filename):
+     return jsonify({'message': 'Invalid file type'}), 400
+   print("im here 2")
+   filename = secure_filename(uploaded_file.filename)
+   print(filename)
+   uploaded_file.save(os.path.join(app.config['UPLOAD_FOLDER'],filename))
+   return jsonify({'message': 'File uploaded successfully'}), 200
    
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5328, debug=True)
