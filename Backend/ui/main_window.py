@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QListWidget, QFileDialog,
-    QRadioButton, QGroupBox, QComboBox, QCheckBox, QLabel
+    QRadioButton, QGroupBox, QComboBox, QCheckBox, QLabel,QProgressBar,QApplication
 )
 
 from core.worker import SplitterWorker
@@ -74,11 +74,27 @@ class MainWindow(QMainWindow):
         self.run_btn = QPushButton("Start")
         self.run_btn.clicked.connect(self.start)
         layout.addWidget(self.run_btn)
+        
+        #progress bar
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        self.progress.setFormat("%p%")
+        self.progress.hide()
+        layout.addWidget(self.progress)
+        
+        
     def add_files(self):
         files, _ = QFileDialog.getOpenFileNames(
             self, "Select Audio", "", "Audio (*.mp3 *.wav)"
         )
         self.list.addItems(files)
+        
+    def update_progress(self, value):
+        self.progress.setValue(value)
+        if value >= 100:
+        # Optional: hide after completion
+            self.progress.hide()
+        
     def select_output_dir(self):
         folder = QFileDialog.getExistingDirectory(
             self,
@@ -87,10 +103,30 @@ class MainWindow(QMainWindow):
         if folder:
             self.output_dir = folder
             self.output_label.setText(f"Output folder: {folder}")
+    
+    def on_worker_finished(self):
+        self.run_btn.setEnabled(True)
+        self.add_btn.setEnabled(True)
+        self.list.setEnabled(True)
+        self.device_box.setEnabled(True)
+        self.quality_box.setEnabled(True)
+        self.chk_mp3.setEnabled(True)
+        self.output_btn.setEnabled(True)
+        self.progress.hide()
 
     def start(self):
         if self.list.count() == 0:
             return
+        self.run_btn.setEnabled(False)
+        self.add_btn.setEnabled(False)
+        self.list.setEnabled(False)
+        self.device_box.setEnabled(False)
+        self.quality_box.setEnabled(False)
+        self.chk_mp3.setEnabled(False)
+        self.output_btn.setEnabled(False)
+        self.progress.setValue(0)
+        
+        self.progress.show()
 
         file = self.list.item(0).text()
 
@@ -116,6 +152,7 @@ class MainWindow(QMainWindow):
         
         output_dir = self.output_dir or ""
 
+       
 
         self.worker = SplitterWorker(
             file,
@@ -123,7 +160,12 @@ class MainWindow(QMainWindow):
             quality,
             export_mp3,
             device,
-            output_dir
+            output_dir,
+            self.progress
         )
+        print(type(self.worker))
+
+        self.worker.progress_changed.connect(self.update_progress)
+        self.worker.finished.connect(self.on_worker_finished)
         self.worker.start()
 
