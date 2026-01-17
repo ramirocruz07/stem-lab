@@ -68,8 +68,16 @@ class MainWindow(QMainWindow):
         
         
         # -------- OUTPUT --------
-        self.chk_mp3 = QCheckBox("Export MP3")
-        layout.addWidget(self.chk_mp3)
+        layout.addWidget(QLabel("Output Audio Quality"))
+
+        self.output_quality_box = QComboBox()
+        self.output_quality_box.addItems([
+            "WAV (Lossless)",
+            "MP3 – High (320 kbps)",
+            "MP3 – Medium (192 kbps)"
+        ])
+
+        layout.addWidget(self.output_quality_box)
 
         # -------- START BUTTON --------
         self.run_btn = QPushButton("Start")
@@ -107,12 +115,13 @@ class MainWindow(QMainWindow):
             self.output_label.setText(f"Output folder: {folder}")
     
     def on_worker_finished(self):
+        self.output_quality_box.setEnabled(True)
         self.run_btn.setEnabled(True)
         self.add_btn.setEnabled(True)
         self.list.setEnabled(True)
         self.device_box.setEnabled(True)
         self.quality_box.setEnabled(True)
-        self.chk_mp3.setEnabled(True)
+        
         self.output_btn.setEnabled(True)
         self.progress.hide()
 
@@ -129,7 +138,9 @@ class MainWindow(QMainWindow):
         self.list.setEnabled(False)
         self.device_box.setEnabled(False)
         self.quality_box.setEnabled(False)
-        self.chk_mp3.setEnabled(False)
+        self.output_quality_box.setEnabled(False)
+
+
         self.output_btn.setEnabled(False)
         self.progress.setValue(0)
         
@@ -144,10 +155,19 @@ class MainWindow(QMainWindow):
             stems = 6
         else:
             stems = 4
+        quality=self.quality_box.currentText().lower()
 
-        quality = self.quality_box.currentText().lower()
-        export_mp3 = self.chk_mp3.isChecked()
+        output_quality = self.output_quality_box.currentText()
 
+        if "WAV" in output_quality:
+            audio_format = "wav"
+            bitrate = ""
+        elif "320" in output_quality:
+            audio_format = "mp3"
+            bitrate = "320"
+        else:
+            audio_format = "mp3"
+            bitrate = "192"
         # Device
         device_text = self.device_box.currentText()
         if "CPU" in device_text:
@@ -165,10 +185,10 @@ class MainWindow(QMainWindow):
             file,
             stems,
             quality,
-            export_mp3,
+            audio_format,
+            bitrate,
             device,
-            output_dir,
-            self.progress
+            output_dir
         )
         print(type(self.worker))
 
