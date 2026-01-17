@@ -1,3 +1,5 @@
+import os
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QListWidget, QFileDialog,
@@ -6,7 +8,7 @@ from PyQt6.QtWidgets import (
 
 from core.worker import SplitterWorker
 
-
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a")
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -25,10 +27,52 @@ class MainWindow(QMainWindow):
         ])
         layout.addWidget(self.device_box)
         
+        #queue
+        self.queue=[]
+        self.current_index=0
+        self.worker=None
+        
+        #drag and drop
+        self.audio_label = QLabel("Drop audio here or click Select")
+        self.audio_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.audio_label.setFixedHeight(120)
+        self.audio_label.setStyleSheet("""
+                            QLabel {
+                                border: 2px dashed #666;
+                                border-radius: 12px;
+                                color: #bbb;
+                                font-size: 14px;
+                                background-color: #1e1e1e;
+                            }
+                        """)
+        layout.addWidget(self.audio_label)
+        self.setAcceptDrops(True)
+
 
         # -------- FILE LIST --------
         self.list = QListWidget()
+        self.list.setStyleSheet("""
+                QListWidget {
+                    background-color: #121212;
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 6px;
+                    color: #eee;
+                }
+
+                QListWidget::item {
+                    padding: 10px;
+                    margin: 4px;
+                    border-radius: 6px;
+                }
+
+                QListWidget::item:selected {
+                    background-color: #2a82da;
+                    color: white;
+                }
+            """)
         layout.addWidget(self.list)
+        
 
         # -------- ADD FILE BUTTON --------
         self.add_btn = QPushButton("Add Audio")
@@ -92,18 +136,98 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.progress)
     
         
-        
+    #drag and drop 
+    def add_audio_files(self, files):
+        for f in files:
+            if f.lower().endswith(AUDIO_EXTENSIONS) and f not in self.queue:
+                self.queue.append(f)
+                self.list.addItem(os.path.basename(f))
+
     def add_files(self):
         files, _ = QFileDialog.getOpenFileNames(
             self, "Select Audio", "", "Audio (*.mp3 *.wav)"
         )
-        self.list.addItems(files)
+        self.add_audio_files(files)
         
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.toLocalFile().lower().endswith(AUDIO_EXTENSIONS):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+    def dropEvent(self, event):
+        files = [url.toLocalFile() for url in event.mimeData().urls()]
+        self.add_audio_files(files)
+        event.acceptProposedAction()
+    
+    #---------------------------------------------
+
+
     def update_progress(self, value):
         self.progress.setValue(value)
         if value >= 100:
         # Optional: hide after completion
             self.progress.hide()
+            
+    def start_next_job(self):
+        if self.current_index >= len(self.queue):
+            self.on_all_jobs_finished()
+            return
+
+        file = self.queue[self.current_index]
+
+        # Stem count
+        if self.radio_2.isChecked():
+            stems = 2
+        elif self.radio_6.isChecked():
+            stems = 6
+        else:
+            stems = 4
+
+        quality_text = self.quality_box.currentText()
+        if quality_text == "Fast":
+            quality = "fast"
+        elif quality_text == "Best":
+            quality = "best"
+        else:
+            quality = "balanced"
+
+        output_quality = self.output_quality_box.currentText()
+        if "WAV" in output_quality:
+            audio_format = "wav"
+            bitrate = ""
+        elif "320" in output_quality:
+            audio_format = "mp3"
+            bitrate = "320"
+        else:
+            audio_format = "mp3"
+            bitrate = "192"
+
+        device_text = self.device_box.currentText()
+        if "CPU" in device_text:
+            device = "cpu"
+        elif "GPU" in device_text:
+            device = "cuda"
+        else:
+            device = "auto"
+
+        output_dir = self.output_dir or ""
+
+        self.worker = SplitterWorker(
+            file,
+            stems,
+            quality,
+            audio_format,
+            bitrate,
+            device,
+            output_dir
+        )
+
+        self.worker.progress_changed.connect(self.update_progress)
+        self.worker.finished.connect(self.on_worker_finished)
+        self.worker.start()
+
         
     def select_output_dir(self):
         folder = QFileDialog.getExistingDirectory(
@@ -115,84 +239,49 @@ class MainWindow(QMainWindow):
             self.output_label.setText(f"Output folder: {folder}")
     
     def on_worker_finished(self):
+        self.current_index += 1
+        self.progress.setValue(0)
+        self.start_next_job()
+    
+    def on_all_jobs_finished(self):
         self.output_quality_box.setEnabled(True)
         self.run_btn.setEnabled(True)
         self.add_btn.setEnabled(True)
         self.list.setEnabled(True)
         self.device_box.setEnabled(True)
         self.quality_box.setEnabled(True)
-        
         self.output_btn.setEnabled(True)
+
         self.progress.hide()
 
-    def start(self):
-        if self.list.count() == 0:
-            QMessageBox.warning(
+        QMessageBox.information(
             self,
-            "No Audio Selected",
-            "Please select at least one audio file before starting."
+            "Done",
+            "All files in the queue have been processed."
         )
+        
+    
+
+    def start(self):
+        if not self.queue:
+            QMessageBox.warning(
+                self,
+                "No Audio Selected",
+                "Please select at least one audio file before starting."
+            )
             return
+
         self.run_btn.setEnabled(False)
         self.add_btn.setEnabled(False)
         self.list.setEnabled(False)
         self.device_box.setEnabled(False)
         self.quality_box.setEnabled(False)
         self.output_quality_box.setEnabled(False)
-
-
         self.output_btn.setEnabled(False)
+
         self.progress.setValue(0)
-        
         self.progress.show()
 
-        file = self.list.item(0).text()
-
-        # Stem count
-        if self.radio_2.isChecked():
-            stems = 2
-        elif self.radio_6.isChecked():
-            stems = 6
-        else:
-            stems = 4
-        quality=self.quality_box.currentText().lower()
-
-        output_quality = self.output_quality_box.currentText()
-
-        if "WAV" in output_quality:
-            audio_format = "wav"
-            bitrate = ""
-        elif "320" in output_quality:
-            audio_format = "mp3"
-            bitrate = "320"
-        else:
-            audio_format = "mp3"
-            bitrate = "192"
-        # Device
-        device_text = self.device_box.currentText()
-        if "CPU" in device_text:
-            device = "cpu"
-        elif "GPU" in device_text:
-            device = "cuda"
-        else:
-            device = "auto"
-        
-        output_dir = self.output_dir or ""
-
-       
-
-        self.worker = SplitterWorker(
-            file,
-            stems,
-            quality,
-            audio_format,
-            bitrate,
-            device,
-            output_dir
-        )
-        print(type(self.worker))
-
-        self.worker.progress_changed.connect(self.update_progress)
-        self.worker.finished.connect(self.on_worker_finished)
-        self.worker.start()
+        self.current_index = 0
+        self.start_next_job()
 
