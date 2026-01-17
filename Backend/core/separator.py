@@ -1,13 +1,24 @@
 import sys
 import subprocess
+import torch
+import torchaudio
+import soundfile as sf
+
+def custom_save(filepath, src, sample_rate, **kwargs):
+    src = src.detach().cpu().numpy().T
+    sf.write(filepath, src, sample_rate)
+
+torchaudio.save = custom_save
 
 def main():
     input_file = sys.argv[1]
     stem_count = int(sys.argv[2])
     quality = sys.argv[3]
-    export_mp3 = bool(int(sys.argv[4]))
-    device = sys.argv[5]
-    output_dir = sys.argv[6]
+    audio_format = sys.argv[4]
+    bitrate = sys.argv[5]
+    device = sys.argv[6]
+    output_dir = sys.argv[7]
+  
 
     cmd = ["demucs"]
 
@@ -21,16 +32,18 @@ def main():
     elif quality == "best":
         cmd += ["--shifts", "2"]
 
-    if export_mp3:
-        cmd += ["--mp3", "--mp3-bitrate", "320"]
-    
+   
     if device == "cpu":
         cmd += ["-d", "cpu"]
     elif device == "cuda":
         cmd += ["-d", "cuda"]
     
-    if output_dir:
+    if output_dir != "":
         cmd += ["-o", output_dir]
+    if audio_format=="mp3":
+        cmd+=["--mp3"]
+        if bitrate:
+            cmd+=["--mp3-bitrate",bitrate]
 
     cmd.append(input_file)
 

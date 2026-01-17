@@ -6,14 +6,16 @@ from PyQt6.QtCore import QThread,QObject, pyqtSignal, pyqtSlot, QRunnable
 class SplitterWorker(QThread):
     finished = pyqtSignal()
     progress_changed = pyqtSignal(int)
-    def __init__(self, file, stems, quality, export_mp3, device, output_dir, progress):
+    eta = pyqtSignal(str)
+    def __init__(self, file, stems, quality, audio_format, bitrate, device, output_dir):
         super().__init__()
         self.file = file
         self.stems = stems
-        self.quality = quality
-        self.export_mp3 = export_mp3
+        self.audio_format=audio_format
+        self.quality=quality
         self.device = device
         self.output_dir = output_dir
+        self.bitrate=bitrate
     
 
     def run(self):
@@ -27,7 +29,8 @@ class SplitterWorker(QThread):
                 self.file,
                 str(self.stems),
                 self.quality,
-                str(int(self.export_mp3)),
+                self.audio_format,
+                self.bitrate,
                 self.device,
                 self.output_dir
             ],
