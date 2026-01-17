@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QPushButton, QListWidget, QFileDialog,
-    QRadioButton, QGroupBox, QComboBox, QCheckBox, QLabel,QProgressBar,QApplication
+    QRadioButton, QGroupBox, QComboBox, QCheckBox, QLabel,QProgressBar,QApplication,QMessageBox,QPushButton
 )
 
 from core.worker import SplitterWorker
@@ -24,6 +24,7 @@ class MainWindow(QMainWindow):
             "Force GPU",
         ])
         layout.addWidget(self.device_box)
+        
 
         # -------- FILE LIST --------
         self.list = QListWidget()
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         self.progress.setFormat("%p%")
         self.progress.hide()
         layout.addWidget(self.progress)
+    
         
         
     def add_files(self):
@@ -116,6 +118,11 @@ class MainWindow(QMainWindow):
 
     def start(self):
         if self.list.count() == 0:
+            QMessageBox.warning(
+            self,
+            "No Audio Selected",
+            "Please select at least one audio file before starting."
+        )
             return
         self.run_btn.setEnabled(False)
         self.add_btn.setEnabled(False)
