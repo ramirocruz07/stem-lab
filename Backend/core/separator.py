@@ -19,21 +19,23 @@ def main():
     device = sys.argv[6]
     output_dir = sys.argv[7]
   
-
     cmd = ["demucs"]
 
-
+    # Set the model based on stem count
     if stem_count == 2:
-        cmd += ["--two-stems=vocals"]
+        cmd += ["-n", "htdemucs_ft", "--two-stems=vocals"]
     elif stem_count == 6:
         cmd += ["-n", "htdemucs_6s"]
+    else:
+        cmd += ["-n", "htdemucs"]
 
     if quality == "fast":
         cmd += ["--shifts", "0"]
     elif quality == "best":
         cmd += ["--shifts", "2"]
+    else:  # balanced
+        cmd += ["--shifts", "1"]
 
-   
     if device == "cpu":
         cmd += ["-d", "cpu"]
     elif device == "cuda":
@@ -48,9 +50,8 @@ def main():
 
     cmd.append(input_file)
 
-    print("Running:", " ".join(cmd))
+    # Run Demucs
     subprocess.run(cmd)
 
-# 🔐 CRITICAL GUARD
 if __name__ == "__main__":
     main()
