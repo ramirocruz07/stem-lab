@@ -117,8 +117,25 @@ class MainWindow(QMainWindow):
         self.current_index = 0
         self.worker = None
         self.output_dir = None
+        self.gpu_available = self.check_gpu_availability()
         
         self.init_ui()
+    
+    def check_gpu_availability(self):
+        """Check if CUDA GPU is available"""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                gpu_name = torch.cuda.get_device_name(0)
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+                print(f"✅ GPU Available: {gpu_name} ({gpu_memory:.1f} GB)")
+                return True
+            else:
+                print("⚠️  No GPU available, using CPU only")
+                return False
+        except Exception as e:
+            print(f"⚠️  Error checking GPU: {e}")
+            return False
         
     def init_ui(self):
         # Central widget with horizontal layout
@@ -141,8 +158,8 @@ class MainWindow(QMainWindow):
         title.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {self.accent}; margin-bottom: 20px;")
         left_layout.addWidget(title)
         
-        # Device Selection
-        device_group = self.create_option_group("Device", ["Auto (Recommended)", "Force CPU", "Force GPU"])
+        # Device Selection with GPU status
+        device_group = self.create_device_group()
         left_layout.addWidget(device_group)
         
         # Stem Count Selection
@@ -160,6 +177,10 @@ class MainWindow(QMainWindow):
         # Output Folder
         folder_group = self.create_folder_group()
         left_layout.addWidget(folder_group)
+        
+        # Hardware Status
+        status_group = self.create_status_group()
+        left_layout.addWidget(status_group)
         
         # Start Button
         self.start_btn = QPushButton("START PROCESSING")
@@ -253,7 +274,7 @@ class MainWindow(QMainWindow):
         
         # Progress Container
         progress_container = QWidget()
-        progress_container.setStyleSheet(f"background-color: {self.bg_card}; border-radius: 8px; padding: 6px;")
+        progress_container.setStyleSheet(f"background-color: {self.bg_card}; border-radius: 8px; padding: 15px;")
         progress_container_layout = QVBoxLayout(progress_container)
         progress_container_layout.setSpacing(10)
         
@@ -272,6 +293,12 @@ class MainWindow(QMainWindow):
         self.current_file_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 12px; text-align: center;")
         self.current_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         progress_container_layout.addWidget(self.current_file_label)
+        
+        # Hardware Usage Label
+        self.hardware_label = QLabel("")
+        self.hardware_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 11px; text-align: center;")
+        self.hardware_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        progress_container_layout.addWidget(self.hardware_label)
         
         right_layout.addWidget(progress_container)
         
@@ -344,6 +371,123 @@ class MainWindow(QMainWindow):
         # Enable drag and drop
         self.setAcceptDrops(True)
         
+    def create_device_group(self):
+        group = QGroupBox("Device Selection")
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                color: {self.text_primary};
+                font-weight: bold;
+                border: 1px solid #333;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: {self.bg_card};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                color: {self.text_secondary};
+            }}
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(8)
+        
+        # Device combo box
+        self.device_box = QComboBox()
+        
+        if self.gpu_available:
+            try:
+                import torch
+                gpu_name = torch.cuda.get_device_name(0)
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+                self.device_box.addItems([
+                    f"Auto (GPU Recommended) - {gpu_name}",
+                    "Force CPU",
+                    f"Force GPU - {gpu_name} ({gpu_memory:.1f}GB)"
+                ])
+            except:
+                self.device_box.addItems(["Auto (Recommended)", "Force CPU", "Force GPU"])
+        else:
+            self.device_box.addItems(["Auto (CPU Only)", "Force CPU"])
+            # Disable GPU option
+            for i in range(self.device_box.count()):
+                if "GPU" in self.device_box.itemText(i):
+                    self.device_box.model().item(i).setEnabled(False)
+        
+        self.device_box.setStyleSheet(f"""
+            QComboBox {{
+                background-color: #2a2a2a;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 8px;
+                color: {self.text_primary};
+                min-height: 20px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid {self.text_secondary};
+                margin-right: 10px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: #2a2a2a;
+                border: 1px solid #444;
+                color: {self.text_primary};
+                selection-background-color: {self.accent};
+            }}
+        """)
+        
+        layout.addWidget(self.device_box)
+        group.setLayout(layout)
+        return group
+    
+    def create_status_group(self):
+        group = QFrame()
+        group.setStyleSheet(f"background-color: {self.bg_card}; border-radius: 8px; padding: 15px;")
+        
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
+        
+        # Status label
+        status_label = QLabel("Hardware Status")
+        status_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 14px; font-weight: bold;")
+        layout.addWidget(status_label)
+        
+        # GPU/CPU status
+        if self.gpu_available:
+            try:
+                import torch
+                gpu_name = torch.cuda.get_device_name(0)
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+                status_text = f"✅ GPU Available\n{gpu_name}\n{gpu_memory:.1f} GB VRAM"
+                color = "#4CAF50"
+            except:
+                status_text = "✅ GPU Available"
+                color = "#4CAF50"
+        else:
+            status_text = "⚠️  CPU Only Mode"
+            color = "#FF9800"
+        
+        self.status_label = QLabel(status_text)
+        self.status_label.setStyleSheet(f"""
+            color: {color};
+            font-size: 12px;
+            padding: 8px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            border: 1px solid #333;
+        """)
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+        
+        return group
+    
     def create_option_group(self, title, options):
         group = QGroupBox(title)
         group.setStyleSheet(f"""
@@ -396,9 +540,7 @@ class MainWindow(QMainWindow):
             }}
         """)
         
-        if title == "Device":
-            self.device_box = combo
-        elif title == "Processing Quality":
+        if title == "Processing Quality":
             self.quality_box = combo
         
         layout.addWidget(combo)
@@ -642,19 +784,51 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_label.setText("Ready")
         self.current_file_label.setText("")
+        self.hardware_label.setText("")
+    
+    def update_hardware_usage(self, device_type):
+        """Update hardware usage display"""
+        if device_type == "cuda":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    memory_allocated = torch.cuda.memory_allocated() / 1e9
+                    memory_reserved = torch.cuda.memory_reserved() / 1e9
+                    self.hardware_label.setText(f"GPU Memory: {memory_allocated:.2f}/{memory_reserved:.2f} GB")
+            except:
+                self.hardware_label.setText("Using GPU")
+        else:
+            self.hardware_label.setText("Using CPU")
     
     def show_output_folder(self, output_folder):
         """Display output folder path and enable open button"""
-        if os.path.exists(output_folder):
+        if output_folder and os.path.exists(output_folder):
             self.output_path_label.setText(output_folder)
             self.open_output_btn.setEnabled(True)
+            
+            # Count how many stem files were created
+            stem_files = [f for f in os.listdir(output_folder) if f.endswith(('.wav', '.mp3', '.flac'))]
+            if stem_files:
+                self.output_path_label.setText(f"{output_folder}\n\nCreated {len(stem_files)} stem files")
         else:
-            self.output_path_label.setText("Output folder not found")
+            # Try to find output in default locations
+            default_paths = [
+                os.path.join(os.path.expanduser("~"), "separated"),
+                os.path.join(os.path.expanduser("~"), "Downloads", "Demucs"),
+            ]
+            
+            for path in default_paths:
+                if os.path.exists(path):
+                    self.output_path_label.setText(f"Output might be in: {path}\n\nPlease check this folder manually")
+                    self.open_output_btn.setEnabled(True)
+                    return
+            
+            self.output_path_label.setText("Output folder not found. Check console for details.")
             self.open_output_btn.setEnabled(False)
     
     def open_output_folder(self):
         """Open the output folder in system file explorer"""
-        output_path = self.output_path_label.text()
+        output_path = self.output_path_label.text().split('\n')[0]  # Get first line
         if os.path.exists(output_path):
             system = platform.system()
             try:
@@ -735,14 +909,21 @@ class MainWindow(QMainWindow):
             audio_format = "mp3"
             bitrate = "192"
         
-        # Device
+        # Device - parse from combo box text
         device_text = self.device_box.currentText()
         if "CPU" in device_text:
             device = "cpu"
+            self.update_hardware_usage("cpu")
         elif "GPU" in device_text:
             device = "cuda"
+            self.update_hardware_usage("cuda")
         else:
             device = "auto"
+            # Auto-detect based on availability
+            if self.gpu_available:
+                self.update_hardware_usage("cuda")
+            else:
+                self.update_hardware_usage("cpu")
         
         output_dir = self.output_dir or ""
         
@@ -759,12 +940,18 @@ class MainWindow(QMainWindow):
         
         self.worker.progress_changed.connect(self.update_progress)
         self.worker.output_ready.connect(self.show_output_folder)
+        self.worker.gpu_memory_update.connect(self.update_hardware_label)  # NEW
         self.worker.finished.connect(self.on_worker_finished)
         self.worker.start()
     
     def on_worker_finished(self):
         self.current_index += 1
         self.process_next_file()
+        
+    def update_hardware_label(self, text):
+        """Update hardware label with GPU memory info"""
+        self.hardware_label.setText(text)
+
     
     def on_all_jobs_finished(self):
         # Re-enable UI
