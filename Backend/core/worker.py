@@ -2,12 +2,14 @@ import os
 import sys
 import subprocess
 import re
+import time
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class SplitterWorker(QThread):
     finished = pyqtSignal()
     progress_changed = pyqtSignal(int)
     output_ready = pyqtSignal(str)
+    gpu_memory_update = pyqtSignal(str)  # New signal for GPU memory updates
     
     def __init__(self, file, stems, quality, audio_format, bitrate, device, output_dir):
         super().__init__()
@@ -19,7 +21,8 @@ class SplitterWorker(QThread):
         self.output_dir = output_dir
         self.bitrate = bitrate
         self.last_progress = 0
-    
+        self.running = True
+        
     def run(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         separator_path = os.path.join(base_dir, "core", "separator.py")
@@ -36,8 +39,12 @@ class SplitterWorker(QThread):
             self.output_dir
         ]
 
+        # Start GPU memory monitoring if using GPU
+        if self.device == "cuda":
+            self.start_gpu_monitor()
+        
         print(f"\n🚀 Starting separation: {os.path.basename(self.file)}")
-        print(f"📊 Settings: {self.stems} stems, {self.quality} quality, {self.audio_format} format")
+        print(f"📊 Settings: {self.stems} stems, {self.quality} quality, {self.audio_format} format, Device: {self.device}")
         
         process = subprocess.Popen(
             cmd,
@@ -52,11 +59,15 @@ class SplitterWorker(QThread):
         for line in process.stdout:
             line = line.strip()
             
+            # Print to console
+            if line:
+                print(line)
+            
             # Look for percentage in various formats
             if '%' in line:
                 # Try to extract percentage from the line
                 percent = self.extract_percentage(line)
-                if percent is not None and percent >= 0 and percent <= 100:
+                if percent is not None and 0 <= percent <= 100:
                     # Only update if progress increased (avoid going backwards)
                     if percent > self.last_progress:
                         self.progress_changed.emit(percent)
@@ -67,8 +78,21 @@ class SplitterWorker(QThread):
                 if self.last_progress < 100:
                     self.progress_changed.emit(100)
                     self.last_progress = 100
+                    
+            # Look for output folder in Demucs output
+            if 'writing to' in line.lower() or 'saved to' in line.lower():
+                # Try to extract folder path from the line
+                folder_match = re.search(r'writing to (.+)|saved to (.+)', line, re.IGNORECASE)
+                if folder_match:
+                    folder_path = folder_match.group(1) or folder_match.group(2)
+                    if folder_path and os.path.exists(folder_path):
+                        print(f"Found output folder from Demucs output: {folder_path}")
+                        self.output_ready.emit(folder_path)
 
         process.wait()
+        
+        # Stop GPU monitoring
+        self.running = False
         
         # Ensure we end at 100%
         if self.last_progress < 100:
@@ -80,9 +104,34 @@ class SplitterWorker(QThread):
             print(f"✅ Success! Output saved to: {output_folder}")
             self.output_ready.emit(output_folder)
         else:
-            print("⚠️  Output folder not found!")
+            print("⚠️  Could not find output folder automatically.")
+            print("Check these common locations:")
+            print("1. ~/separated/ (default)")
+            print("2. ~/Downloads/Demucs/")
+            print("3. The output folder you selected in the app")
         
         self.finished.emit()
+    
+    def start_gpu_monitor(self):
+        """Start monitoring GPU memory usage in a separate thread"""
+        import threading
+        
+        def monitor_gpu():
+            while self.running:
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        memory_allocated = torch.cuda.memory_allocated() / 1e9
+                        memory_reserved = torch.cuda.memory_reserved() / 1e9
+                        memory_text = f"GPU: {memory_allocated:.2f}/{memory_reserved:.2f} GB"
+                        self.gpu_memory_update.emit(memory_text)
+                except:
+                    pass
+                time.sleep(2)  # Update every 2 seconds
+        
+        # Start monitoring thread
+        monitor_thread = threading.Thread(target=monitor_gpu, daemon=True)
+        monitor_thread.start()
     
     def extract_percentage(self, line):
         """Extract percentage from various Demucs output formats"""
@@ -124,23 +173,26 @@ class SplitterWorker(QThread):
         # Get input file name without extension
         input_name = Path(self.file).stem
         
-        # Determine output directory
+        # Try multiple possible output locations
+        
+        # 1. User-specified output directory
         if self.output_dir:
-            base_output = self.output_dir
-        else:
-            # Demucs default output location
-            base_output = os.path.join(os.path.expanduser("~"), "separated")
+            output_folder = os.path.join(self.output_dir, model_name, input_name)
+            if os.path.exists(output_folder):
+                return output_folder
         
-        # Construct full output path
-        output_folder = os.path.join(base_output, model_name, input_name)
+        # 2. Demucs default locations
+        default_locations = [
+            os.path.join(os.path.expanduser("~"), "separated"),
+            os.path.join(os.path.expanduser("~"), "Downloads", "Demucs"),
+            os.path.join(os.path.expanduser("~"), "Desktop", "Demucs"),
+            os.path.join(os.path.expanduser("~"), "Documents", "Demucs"),
+            os.path.join(os.getcwd(), "separated"),
+        ]
         
-        if os.path.exists(output_folder):
-            return output_folder
+        for base_output in default_locations:
+            output_folder = os.path.join(base_output, model_name, input_name)
+            if os.path.exists(output_folder):
+                return output_folder
         
-        # Try alternative location (Demucs might use different default)
-        alt_base = os.path.join(os.path.expanduser("~"), "Downloads", "Demucs")
-        alt_folder = os.path.join(alt_base, model_name, input_name)
-        if os.path.exists(alt_folder):
-            return alt_folder
-            
         return None
