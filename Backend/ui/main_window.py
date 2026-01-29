@@ -182,6 +182,30 @@ class MainWindow(QMainWindow):
         status_group = self.create_status_group()
         left_layout.addWidget(status_group)
         
+        self.cancel_btn = QPushButton("CANCEL")
+        self.cancel_btn.setFixedHeight(45)
+        self.cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #ff4d4d;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #e04343;
+            }}
+            QPushButton:disabled {{
+                background-color: #2d2d2d;
+                color: #666;
+            }}
+        """)
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self.cancel_processing)
+
+        left_layout.addWidget(self.cancel_btn)
+        
         # Start Button
         self.start_btn = QPushButton("START PROCESSING")
         self.start_btn.setFixedHeight(45)
@@ -204,6 +228,8 @@ class MainWindow(QMainWindow):
         """)
         self.start_btn.clicked.connect(self.start_processing)
         left_layout.addWidget(self.start_btn)
+        
+        
         
         # Spacer
         left_layout.addStretch()
@@ -288,12 +314,13 @@ class MainWindow(QMainWindow):
         self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         progress_container_layout.addWidget(self.progress_label)
         
-        # Current File Label
-        self.current_file_label = QLabel("")
-        self.current_file_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 12px; text-align: center;")
+        self.current_file_label = QLabel("Processing: —")
+        self.current_file_label.setStyleSheet(
+    f"color: {self.text_secondary}; font-size: 12px;"
+)
         self.current_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         progress_container_layout.addWidget(self.current_file_label)
-        
         # Hardware Usage Label
         self.hardware_label = QLabel("")
         self.hardware_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 11px; text-align: center;")
@@ -783,7 +810,6 @@ class MainWindow(QMainWindow):
     def reset_progress_display(self):
         self.progress_bar.setValue(0)
         self.progress_label.setText("Ready")
-        self.current_file_label.setText("")
         self.hardware_label.setText("")
     
     def update_hardware_usage(self, device_type):
@@ -843,6 +869,9 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Folder Not Found", "The output folder does not exist.")
     
+    def cancel_processing(self):
+        if self.worker:
+            self.worker.cancel()
     def start_processing(self):
         if not self.queue:
             QMessageBox.warning(
@@ -857,7 +886,8 @@ class MainWindow(QMainWindow):
         self.add_btn.setEnabled(False)
         self.folder_btn.setEnabled(False)
         self.queue_list.setEnabled(False)
-        
+        self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         # Show progress
         self.progress_bar.show()
         self.progress_label.setText("0%")
@@ -869,7 +899,12 @@ class MainWindow(QMainWindow):
         self.current_index = 0
         self.process_next_file()
     
+    def update_current_file(self, filename):
+        self.current_file_label.setText(f"Processing: {filename}")
+        self.current_file_label.show()
     def process_next_file(self):
+        self.progress_bar.setValue(0)
+
         if self.current_index >= len(self.queue):
             self.on_all_jobs_finished()
             return
@@ -877,7 +912,7 @@ class MainWindow(QMainWindow):
         # Get current file
         file_path = self.queue[self.current_index]
         file_name = os.path.basename(file_path)
-        self.current_file_label.setText(f"Processing: {file_name}")
+     
         
         # Get stem count from combo box
         stem_count_text = self.stem_count_combo.currentText()
@@ -937,7 +972,8 @@ class MainWindow(QMainWindow):
             device,
             output_dir
         )
-        
+        self.worker.current_file.connect(self.update_current_file)
+
         self.worker.progress_changed.connect(self.update_progress)
         self.worker.output_ready.connect(self.show_output_folder)
         self.worker.gpu_memory_update.connect(self.update_hardware_label)  # NEW
@@ -959,7 +995,8 @@ class MainWindow(QMainWindow):
         self.add_btn.setEnabled(True)
         self.folder_btn.setEnabled(True)
         self.queue_list.setEnabled(True)
-        
+        self.cancel_btn.setEnabled(False)
+        self.start_btn.setEnabled(True)
         # Show completion message
         QMessageBox.information(
             self,

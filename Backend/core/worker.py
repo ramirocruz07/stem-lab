@@ -10,7 +10,8 @@ class SplitterWorker(QThread):
     progress_changed = pyqtSignal(int)
     output_ready = pyqtSignal(str)
     gpu_memory_update = pyqtSignal(str)  # New signal for GPU memory updates
-    
+    current_file = pyqtSignal(str)
+
     def __init__(self, file, stems, quality, audio_format, bitrate, device, output_dir):
         super().__init__()
         self.file = file
@@ -23,12 +24,15 @@ class SplitterWorker(QThread):
         self.last_progress = 0
         self.running = True
         
+
+        
     def run(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         separator_path = os.path.join(base_dir, "core", "separator.py")
 
         cmd = [
             sys.executable,
+            "-u", 
             separator_path,
             self.file,
             str(self.stems),
@@ -45,7 +49,8 @@ class SplitterWorker(QThread):
         
         print(f"\n🚀 Starting separation: {os.path.basename(self.file)}")
         print(f"📊 Settings: {self.stems} stems, {self.quality} quality, {self.audio_format} format, Device: {self.device}")
-        
+        filename = os.path.basename(self.file)
+        self.current_file.emit(filename)
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -55,30 +60,27 @@ class SplitterWorker(QThread):
             universal_newlines=True
         )
 
-        # Track progress
-        for line in process.stdout:
-            line = line.strip()
-            
-            # Print to console
-            if line:
-                print(line)
-            
-            # Look for percentage in various formats
-            if '%' in line:
-                # Try to extract percentage from the line
+        buffer = ""
+
+        while True:
+            char = process.stdout.read(1)
+            if not char:
+                break
+
+            if char in ("\r", "\n"):
+                line = buffer.strip()
+                buffer = ""
+
                 percent = self.extract_percentage(line)
-                if percent is not None and 0 <= percent <= 100:
-                    # Only update if progress increased (avoid going backwards)
-                    if percent > self.last_progress:
-                        self.progress_changed.emit(percent)
-                        self.last_progress = percent
+                if percent is not None and percent > self.last_progress:
+                    self.progress_changed.emit(percent)
+                    self.last_progress = percent
+            else:
+                buffer += char
+
             
             # Check for completion indicators
-            if any(word in line.lower() for word in ['done', 'finished', 'saved', 'complete']):
-                if self.last_progress < 100:
-                    self.progress_changed.emit(100)
-                    self.last_progress = 100
-                    
+
             # Look for output folder in Demucs output
             if 'writing to' in line.lower() or 'saved to' in line.lower():
                 # Try to extract folder path from the line
