@@ -23,6 +23,9 @@ class SplitterWorker(QThread):
         self.bitrate = bitrate
         self.last_progress = 0
         self.running = True
+        self.process = None
+        self._cancel_requested = False
+
         
 
         
@@ -51,7 +54,7 @@ class SplitterWorker(QThread):
         print(f"📊 Settings: {self.stems} stems, {self.quality} quality, {self.audio_format} format, Device: {self.device}")
         filename = os.path.basename(self.file)
         self.current_file.emit(filename)
-        process = subprocess.Popen(
+        self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -63,7 +66,11 @@ class SplitterWorker(QThread):
         buffer = ""
 
         while True:
-            char = process.stdout.read(1)
+            # ✅ Cancel support
+            if self._cancel_requested:
+                break
+
+            char = self.process.stdout.read(1)
             if not char:
                 break
 
@@ -71,47 +78,44 @@ class SplitterWorker(QThread):
                 line = buffer.strip()
                 buffer = ""
 
+                if not line:
+                    continue
+
+                # Progress parsing
                 percent = self.extract_percentage(line)
                 if percent is not None and percent > self.last_progress:
                     self.progress_changed.emit(percent)
                     self.last_progress = percent
+
+                # Output folder detection
+                if 'writing to' in line.lower() or 'saved to' in line.lower():
+                    folder_match = re.search(
+                        r'writing to (.+)|saved to (.+)',
+                        line,
+                        re.IGNORECASE
+                    )
+                    if folder_match:
+                        folder_path = folder_match.group(1) or folder_match.group(2)
+                        if folder_path and os.path.exists(folder_path):
+                            self.output_ready.emit(folder_path)
+
             else:
                 buffer += char
 
-            
-            # Check for completion indicators
-
-            # Look for output folder in Demucs output
-            if 'writing to' in line.lower() or 'saved to' in line.lower():
-                # Try to extract folder path from the line
-                folder_match = re.search(r'writing to (.+)|saved to (.+)', line, re.IGNORECASE)
-                if folder_match:
-                    folder_path = folder_match.group(1) or folder_match.group(2)
-                    if folder_path and os.path.exists(folder_path):
-                        print(f"Found output folder from Demucs output: {folder_path}")
-                        self.output_ready.emit(folder_path)
-
-        process.wait()
-        
-        # Stop GPU monitoring
+        # Process ended or cancelled
+        self.process.wait()
         self.running = False
-        
-        # Ensure we end at 100%
-        if self.last_progress < 100:
+
+        # Emit final progress only if not cancelled
+        if not self._cancel_requested and self.last_progress < 100:
             self.progress_changed.emit(100)
-        
-        # Get output folder
-        output_folder = self.get_output_folder()
-        if output_folder:
-            print(f"✅ Success! Output saved to: {output_folder}")
-            self.output_ready.emit(output_folder)
-        else:
-            print("⚠️  Could not find output folder automatically.")
-            print("Check these common locations:")
-            print("1. ~/separated/ (default)")
-            print("2. ~/Downloads/Demucs/")
-            print("3. The output folder you selected in the app")
-        
+
+        # Final output folder fallback
+        if not self._cancel_requested:
+            output_folder = self.get_output_folder()
+            if output_folder:
+                self.output_ready.emit(output_folder)
+
         self.finished.emit()
     
     def start_gpu_monitor(self):
@@ -159,7 +163,15 @@ class SplitterWorker(QThread):
             pass
         
         return None
-    
+    def cancel(self):
+        self._cancel_requested = True
+
+        if self.process:
+            try:
+                self.process.terminate()  # graceful stop
+            except Exception:
+                pass
+
     def get_output_folder(self):
         """Get the actual output folder where stems are saved"""
         import os
