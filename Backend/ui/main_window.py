@@ -981,9 +981,28 @@ class MainWindow(QMainWindow):
         self.worker.start()
     
     def on_worker_finished(self):
-        self.current_index += 1
-        self.process_next_file()
-        
+        if self.worker and getattr(self.worker, "_cancel_requested", False):
+            self.on_cancelled()
+            return
+        else:
+            self.current_index += 1
+            self.process_next_file()
+            
+    def on_cancelled(self):
+        self.queue.clear()
+        self.queue_list.clear()
+
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("Cancelled")
+        self.current_file_label.setText("")
+
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.add_btn.setEnabled(True)
+        self.folder_btn.setEnabled(True)
+        self.queue_list.setEnabled(True)
+
+            
     def update_hardware_label(self, text):
         """Update hardware label with GPU memory info"""
         self.hardware_label.setText(text)
