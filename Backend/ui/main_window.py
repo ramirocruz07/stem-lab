@@ -6,30 +6,31 @@ from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QListWidget, QFileDialog, QListWidgetItem,
-    QGroupBox, QComboBox, QCheckBox, QLabel, 
+    QGroupBox, QComboBox, QCheckBox, QLabel,
     QProgressBar, QApplication, QMessageBox, QFrame,
-    QAbstractItemView
+    QAbstractItemView, QSplitter, QSizePolicy, QScrollArea
 )
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon, QPixmap
 
 from core.worker import SplitterWorker
 
-AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a")
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".aacc", ".ogg", ".m4a")
 
 class ModernProgressBar(QProgressBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTextVisible(False)
-        self.setFixedHeight(6)
+        self.setFixedHeight(10)
         self.setStyleSheet("""
             QProgressBar {
-                border: none;
-                background-color: #2d2d2d;
-                border-radius: 3px;
+                border: 1px solid #c3ae86;
+                background-color: #f2e4c7;
+                border-radius: 5px;
+                padding: 0px;
             }
             QProgressBar::chunk {
-                background-color: #4CAF50;
-                border-radius: 3px;
+                background-color: #2f6f6d;
+                border-radius: 5px;
             }
         """)
 
@@ -47,16 +48,43 @@ class FileItemWidget(QWidget):
         layout.setContentsMargins(10, 5, 10, 5)
         layout.setSpacing(10)
         
-        # File icon (simulated with text)
-        icon_label = QLabel("📁")
-        icon_label.setStyleSheet("font-size: 14px;")
+        # File icon using SVG from assets folder
+        icon_label = QLabel()
+        # Get the base directory (Backend folder)
+        script_dir = os.path.dirname(os.path.abspath(__file__))  # Backend/ui/
+        base_dir = os.path.dirname(script_dir)  # Backend/
+        assets_dir = os.path.join(base_dir, "assets")  # Backend/assets/
+        icon_path = os.path.join(assets_dir, "music-folder.svg")
+        
+        try:
+            if os.path.exists(icon_path):
+                icon_pixmap = QPixmap(icon_path)
+                if not icon_pixmap.isNull():
+                    icon_pixmap = icon_pixmap.scaled(20, 20, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    icon_label.setPixmap(icon_pixmap)
+                    icon_label.setFixedSize(20, 20)
+                else:
+                    # Fallback if pixmap is null
+                    icon_label.setText("📁")
+                    icon_label.setStyleSheet("font-size: 14px;")
+                    icon_label.setFixedSize(20, 20)
+            else:
+                # Fallback to text icon if SVG not found
+                icon_label.setText("📁")
+                icon_label.setStyleSheet("font-size: 14px;")
+                icon_label.setFixedSize(20, 20)
+        except Exception:
+            # Fallback on any error
+            icon_label.setText("📁")
+            icon_label.setStyleSheet("font-size: 14px;")
+            icon_label.setFixedSize(20, 20)
         layout.addWidget(icon_label)
         
         # File name
         self.name_label = QLabel(filename)
         self.name_label.setStyleSheet("""
             QLabel {
-                color: #ffffff;
+                color: #3c2f26;
                 font-size: 13px;
                 padding: 3px 0;
             }
@@ -99,18 +127,69 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("STEM SPLITTER")
-        self.resize(900, 600)
         
-        # Color scheme
-        self.bg_dark = "#0f0f0f"
-        self.bg_card = "#1a1a1a"
-        self.bg_sidebar = "#141414"
-        self.accent = "#4CAF50"
-        self.text_primary = "#ffffff"
-        self.text_secondary = "#b0b0b0"
+        # Set application icon/logo
+        self.set_app_icon()
         
-        # Set window style
-        self.setStyleSheet(f"background-color: {self.bg_dark}; color: {self.text_primary};")
+        self.adjustSize()
+        self.setMinimumSize(820, 520)
+        
+        # Color palette (warm parchment theme)
+        self.bg_dark = "#f5ecd8"        # main background (paper)
+        self.bg_card = "#f2e4c7"        # cards / panels
+        self.bg_sidebar = "#f2e4c7"     # left sidebar
+        self.accent = "#c45525"         # primary accent (warm orange/red)
+        self.accent_soft = "#2f6f6d"    # secondary accent (muted teal)
+        self.accent_hover = "#d9642b"   # hover state
+        self.text_primary = "#3c2f26"
+        self.text_secondary = "#7a5f4b"
+        self.border_color = "#d4c4a3"
+        
+        # Set window style with scrollbar styling
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {self.bg_dark};
+                color: {self.text_primary};
+            }}
+            QScrollBar:vertical {{
+                background: #f2e4c7;
+                width: 10px;
+                margin: 4px 0 4px 0;
+                border-radius: 5px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #c3ae86;
+                min-height: 20px;
+                border-radius: 5px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: #b09568;
+            }}
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{
+                background: none;
+                height: 0px;
+            }}
+            QScrollBar:horizontal {{
+                background: #f2e4c7;
+                height: 10px;
+                margin: 0 4px 0 4px;
+                border-radius: 5px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: #c3ae86;
+                min-width: 20px;
+                border-radius: 5px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: #b09568;
+            }}
+            QScrollBar::add-line:horizontal,
+            QScrollBar::sub-line:horizontal {{
+                background: none;
+                width: 0px;
+            }}
+        """)
         
         # Queue and state
         self.queue = []  # List of file paths
@@ -120,6 +199,49 @@ class MainWindow(QMainWindow):
         self.gpu_available = self.check_gpu_availability()
         
         self.init_ui()
+    
+    def set_app_icon(self):
+        """Set the application window icon"""
+        # Get the base directory (Backend folder)
+        # __file__ is Backend/ui/main_window.py, so go up one level to Backend/
+        script_dir = os.path.dirname(os.path.abspath(__file__))  # Backend/ui/
+        base_dir = os.path.dirname(script_dir)  # Backend/
+        assets_dir = os.path.join(base_dir, "assets")  # Backend/assets/
+        
+        # Try logo file locations in assets folder
+        logo_paths = [
+            os.path.join(assets_dir, "logo.png"),
+            os.path.join(assets_dir, "logo.ico"),
+            os.path.join(assets_dir, "logo.svg"),
+            os.path.join(assets_dir, "stem-splitter-logo.png"),
+            os.path.join(assets_dir, "stem-splitter-logo.ico"),
+            os.path.join(assets_dir, "stem-splitter-logo.svg"),
+        ]
+        
+        icon_set = False
+        for logo_path in logo_paths:
+            if os.path.exists(logo_path):
+                try:
+                    icon = QIcon(logo_path)
+                    if not icon.isNull():
+                        self.setWindowIcon(icon)
+                        # Also set for the application
+                        QApplication.setWindowIcon(icon)
+                        icon_set = True
+                        print(f"✅ Application icon set from: {logo_path}")
+                        break
+                except Exception as e:
+                    print(f"⚠️  Error loading icon from {logo_path}: {e}")
+                    continue
+        
+        if not icon_set:
+            print(f"⚠️  Logo file not found in assets folder.")
+            print(f"   Looking in: {assets_dir}")
+            print(f"   Tried paths:")
+            for lp in logo_paths:
+                exists = "✓" if os.path.exists(lp) else "✗"
+                print(f"     {exists} {lp}")
+            print("   Using default icon.")
     
     def check_gpu_availability(self):
         """Check if CUDA GPU is available"""
@@ -142,20 +264,30 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # Left Panel (Settings)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
+
+        # Left Panel (Settings) - no scroll area, ensure everything fits
         left_panel = QFrame()
-        left_panel.setFixedWidth(300)
-        left_panel.setStyleSheet(f"background-color: {self.bg_sidebar};")
+        left_panel.setFixedWidth(420)
+        left_panel.setStyleSheet(
+            f"background-color: {self.bg_sidebar}; border-radius: 20px; "
+            f"border: 1px solid {self.border_color};"
+        )
+        left_panel.setSizePolicy(
+                QSizePolicy.Policy.Fixed,
+                QSizePolicy.Policy.Expanding
+            )
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(20, 20, 20, 20)
-        left_layout.setSpacing(20)
+        left_layout.setContentsMargins(20, 18, 20, 18)
+        left_layout.setSpacing(14)
         
         # Title
         title = QLabel("STEM SPLITTER")
-        title.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {self.accent}; margin-bottom: 20px;")
+        title.setStyleSheet(
+            f"font-size: 24px; font-weight: bold; letter-spacing: 0.05em; "
+            f"color: {self.accent}; margin: 0px; padding: 0px;"
+        )
         left_layout.addWidget(title)
         
         # Device Selection with GPU status
@@ -174,251 +306,248 @@ class MainWindow(QMainWindow):
         output_group = self.create_output_group()
         left_layout.addWidget(output_group)
         
-        # Output Folder
+        # Output Folder - FIXED: Only create this once
         folder_group = self.create_folder_group()
         left_layout.addWidget(folder_group)
+    
         
-        # Hardware Status
-        status_group = self.create_status_group()
-        left_layout.addWidget(status_group)
-        
-        self.cancel_btn = QPushButton("CANCEL")
-        self.cancel_btn.setFixedHeight(45)
-        self.cancel_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #ff4d4d;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 16px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: #e04343;
-            }}
-            QPushButton:disabled {{
-                background-color: #2d2d2d;
-                color: #666;
-            }}
-        """)
-        self.cancel_btn.setEnabled(False)
-        self.cancel_btn.clicked.connect(self.cancel_processing)
-
-        left_layout.addWidget(self.cancel_btn)
+        # Add spacer to push buttons to the bottom
+        left_layout.addStretch()
         
         # Start Button
         self.start_btn = QPushButton("START PROCESSING")
-        self.start_btn.setFixedHeight(45)
+        self.start_btn.setFixedHeight(44)
         self.start_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.accent};
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 16px;
-                font-weight: bold;
+                color: #fdf7ec;
+                border: 1px solid #a24822;
+                border-radius: 16px;
+                font-size: 15px;
+                font-weight: 600;
+                letter-spacing: 0.06em;
             }}
             QPushButton:hover {{
-                background-color: #45a049;
+                background-color: {self.accent_hover};
             }}
             QPushButton:disabled {{
-                background-color: #2d2d2d;
-                color: #666;
+                background-color: #e2d4ba;
+                color: #a58a70;
+                border-color: #d0c3a8;
             }}
         """)
         self.start_btn.clicked.connect(self.start_processing)
         left_layout.addWidget(self.start_btn)
+      
         
-        
-        
-        # Spacer
-        left_layout.addStretch()
+        # Stop Button
+        self.cancel_btn = QPushButton("STOP")
+        self.cancel_btn.setFixedHeight(40)
+        self.cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #b03b2b;
+                color: #fdf7ec;
+                border: 1px solid #8c2f22;
+                border-radius: 16px;
+                font-size: 14px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: #c94a38;
+            }}
+            QPushButton:disabled {{
+                background-color: #e2d4ba;
+                color: #a58a70;
+                border-color: #d0c3a8;
+            }}
+        """)
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self.cancel_processing)
+        left_layout.addWidget(self.cancel_btn)
         
         # Right Panel (Work Area)
         right_panel = QFrame()
-        right_panel.setStyleSheet(f"background-color: {self.bg_dark};")
+        right_panel.setMinimumWidth(500)
+        right_panel.setStyleSheet(
+            f"background-color: {self.bg_card}; border-radius: 20px; "
+            f"border: 1px solid {self.border_color};"
+        )
+        right_panel.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding
+            )
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(30, 30, 30, 30)
-        right_layout.setSpacing(20)
+        right_layout.setContentsMargins(24, 20, 24, 20)
+        right_layout.setSpacing(16)
         
         # Queue Section
         queue_label = QLabel("File Queue")
-        queue_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {self.accent};")
+        queue_label.setStyleSheet(
+            f"font-size: 20px; font-weight: 700; color: {self.accent}; "
+            f"margin: 0px; padding: 0px;"
+        )
         right_layout.addWidget(queue_label)
         
-        # Queue List with custom items
-        self.queue_list = QListWidget()
-        self.queue_list.setStyleSheet(f"""
-            QListWidget {{
-                background-color: {self.bg_card};
-                border: 1px solid #333;
-                border-radius: 8px;
-                padding: 5px;
-                color: {self.text_primary};
-                font-size: 14px;
-                min-height: 200px;
-            }}
-            QListWidget::item {{
-                border: none;
-                padding: 0px;
-                margin: 2px;
-                background-color: transparent;
-            }}
-            QListWidget::item:hover {{
-                background-color: transparent;
-            }}
-            QListWidget::item:selected {{
-                background-color: transparent;
-            }}
-        """)
-        self.queue_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        right_layout.addWidget(self.queue_list)
-        
-        # Add Files Button
+        # Add Files Button (moved before queue list)
         self.add_btn = QPushButton("+ Add Audio Files")
-        self.add_btn.setFixedHeight(40)
+        self.add_btn.setFixedHeight(48)
         self.add_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {self.bg_card};
+                background-color: #f7ebd2;
                 color: {self.text_primary};
-                border: 2px dashed #444;
-                border-radius: 6px;
-                font-size: 14px;
+                border: 2px dashed #c3ae86;
+                border-radius: 12px;
+                font-size: 13px;
+                font-weight: 500;
             }}
             QPushButton:hover {{
-                background-color: #2a2a2a;
+                background-color: #f3e2c2;
                 border-color: {self.accent};
+                color: {self.accent};
             }}
         """)
         self.add_btn.clicked.connect(self.add_files)
         right_layout.addWidget(self.add_btn)
         
+        # Queue List with custom items
+        self.queue_list = QListWidget()
+        self.queue_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: #f7ebd2;
+                border: 1px solid #d4c4a3;
+                border-radius: 12px;
+                padding: 8px;
+                color: {self.text_primary};
+                font-size: 13px;
+                min-height: 200px;
+            }}
+            QListWidget::item {{
+                border-radius: 8px;
+                margin: 2px;
+            }}
+        """)
+        self.queue_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.queue_list.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
+        right_layout.addWidget(self.queue_list)
+        
         # Progress Section
         progress_label = QLabel("Processing Progress")
-        progress_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {self.accent}; margin-top: 10px;")
+        progress_label.setStyleSheet(
+            f"font-size: 20px; font-weight: 700; color: {self.accent}; "
+            f"margin: 0px; padding: 0px;"
+        )
         right_layout.addWidget(progress_label)
         
-        # Progress Container
+        # Progress Container (no border, clean look)
         progress_container = QWidget()
-        progress_container.setStyleSheet(f"background-color: {self.bg_card}; border-radius: 8px; padding: 15px;")
+        progress_container.setStyleSheet(
+            f"background-color: #f7ebd2; border-radius: 16px;"
+        )
         progress_container_layout = QVBoxLayout(progress_container)
-        progress_container_layout.setSpacing(10)
+        progress_container_layout.setContentsMargins(20, 20, 20, 20)
+        progress_container_layout.setSpacing(14)
         
-        # Progress Bar
+        # Progress Bar (with proper padding to align with rounded corners)
         self.progress_bar = ModernProgressBar()
         progress_container_layout.addWidget(self.progress_bar)
         
-        # Progress Percentage
+        # Progress Percentage (no border, clean look)
         self.progress_label = QLabel("Ready")
-        self.progress_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {self.accent}; text-align: center;")
+        self.progress_label.setStyleSheet(
+            f"font-size: 18px; font-weight: 600; color: {self.accent_soft}; "
+            f"text-align: center; background: transparent; border: none;"
+        )
         self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         progress_container_layout.addWidget(self.progress_label)
         
-        self.current_file_label = QLabel("Processing: —")
+        # Current file being processed (no border)
+        self.current_file_label = QLabel("")
         self.current_file_label.setStyleSheet(
-    f"color: {self.text_secondary}; font-size: 12px;"
-)
+            f"color: {self.text_secondary}; font-size: 13px; font-weight: 500; "
+            f"background: transparent; border: none;"
+        )
         self.current_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
         progress_container_layout.addWidget(self.current_file_label)
-        # Hardware Usage Label
+        
+        # Hardware Usage Label (no border)
         self.hardware_label = QLabel("")
-        self.hardware_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 11px; text-align: center;")
+        self.hardware_label.setStyleSheet(
+            f"color: {self.text_secondary}; font-size: 11px; text-align: center; "
+            f"background: transparent; border: none;"
+        )
         self.hardware_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         progress_container_layout.addWidget(self.hardware_label)
         
         right_layout.addWidget(progress_container)
         
-        # Output Section
-        output_label = QLabel("Output")
-        output_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {self.accent}; margin-top: 10px;")
-        right_layout.addWidget(output_label)
+        # Hidden output widgets (for logic only, not displayed)
+        # self.output_path_label = QLabel("", self)
+        # self.open_output_btn = QPushButton("Open Output Folder", self)
+        # self.open_output_btn.setEnabled(False)
+        # self.open_output_btn.clicked.connect(self.open_output_folder)
         
-        # Output Container
-        output_container = QWidget()
-        output_container.setStyleSheet(f"background-color: {self.bg_card}; border-radius: 8px; padding: 15px;")
-        output_layout = QVBoxLayout(output_container)
-        output_layout.setSpacing(10)
-        
-        # Output Path Display
-        self.output_path_label = QLabel("Output will appear here after processing")
-        self.output_path_label.setStyleSheet(f"""
-            color: {self.text_primary};
-            font-size: 13px;
-            padding: 8px;
-            background-color: #2a2a2a;
-            border-radius: 4px;
-            border: 1px solid #333;
-            min-height: 40px;
-        """)
-        self.output_path_label.setWordWrap(True)
-        output_layout.addWidget(self.output_path_label)
-        
-        # Open Output Folder Button
-        self.open_output_btn = QPushButton("Open Output Folder")
-        self.open_output_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #2a2a2a;
-                color: {self.text_primary};
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 8px;
-            }}
-            QPushButton:hover {{
-                background-color: #333;
-                border-color: {self.accent};
-            }}
-            QPushButton:disabled {{
-                background-color: #1a1a1a;
-                color: #666;
-                border-color: #333;
-            }}
-        """)
-        self.open_output_btn.clicked.connect(self.open_output_folder)
-        self.open_output_btn.setEnabled(False)
-        output_layout.addWidget(self.open_output_btn)
-        
-        right_layout.addWidget(output_container)
-        
-        # Spacer
+        # # Spacer
         right_layout.addStretch()
         
-        # Add panels to main layout
-        main_layout.addWidget(left_panel)
+        # Create splitter for panels (no scroll area - ensure everything fits)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setStretchFactor(0, 0)  # sidebar
+        splitter.setStretchFactor(1, 1)  # content
+        splitter.setChildrenCollapsible(False)
+        # Style the splitter handle to match theme
+        splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background-color: #d4c4a3;
+                width: 2px;
+            }}
+            QSplitter::handle:hover {{
+                background-color: {self.accent};
+            }}
+        """)
         
-        # Divider line
-        divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.VLine)
-        divider.setFrameShadow(QFrame.Shadow.Sunken)
-        divider.setStyleSheet("background-color: #333;")
-        main_layout.addWidget(divider)
+        # Add splitter to main layout
+        main_layout.addWidget(splitter)
         
-        main_layout.addWidget(right_panel)
+        # Set window size - ensure everything fits without scrolling
+        self.resize(1200, 750) 
+        self.setMinimumSize(1100, 700)
         
         # Enable drag and drop
         self.setAcceptDrops(True)
-        
+    
+    # REMOVE THE DUPLICATE create_folder_group() METHOD
+    # There was a duplicate method at the end of the class that was causing the issue
+    
     def create_device_group(self):
         group = QGroupBox("Device Selection")
         group.setStyleSheet(f"""
             QGroupBox {{
                 color: {self.text_primary};
-                font-weight: bold;
-                border: 1px solid #333;
-                border-radius: 8px;
-                margin-top: 10px;
+                font-weight: 600;
+                border: 1px solid {self.border_color};
+                border-radius: 12px;
+                margin-top: 8px;
                 padding-top: 10px;
                 background-color: {self.bg_card};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 10px;
+                subcontrol-position: top center;
+                left: 0px;
+                right: 0px;
                 padding: 0 5px 0 5px;
                 color: {self.text_secondary};
+                font-size: 13px;
             }}
         """)
         
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 6, 12, 8)
         layout.setSpacing(8)
         
         # Device combo box
@@ -445,12 +574,13 @@ class MainWindow(QMainWindow):
         
         self.device_box.setStyleSheet(f"""
             QComboBox {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 8px;
+                background-color: #f7ebd2;
+                border: 1px solid {self.border_color};
+                border-radius: 8px;
+                padding: 10px 12px;
                 color: {self.text_primary};
-                min-height: 20px;
+                min-height: 28px;
+                font-size: 13px;
             }}
             QComboBox::drop-down {{
                 border: none;
@@ -462,11 +592,17 @@ class MainWindow(QMainWindow):
                 border-top: 5px solid {self.text_secondary};
                 margin-right: 10px;
             }}
+            QComboBox:hover {{
+                border-color: {self.accent};
+            }}
             QComboBox QAbstractItemView {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
+                background-color: #f7ebd2;
+                border: 1px solid {self.border_color};
+                border-radius: 8px;
                 color: {self.text_primary};
                 selection-background-color: {self.accent};
+                selection-color: white;
+                padding: 4px;
             }}
         """)
         
@@ -520,50 +656,61 @@ class MainWindow(QMainWindow):
         group.setStyleSheet(f"""
             QGroupBox {{
                 color: {self.text_primary};
-                font-weight: bold;
-                border: 1px solid #333;
-                border-radius: 8px;
-                margin-top: 10px;
+                font-weight: 600;
+                border: 1px solid {self.border_color};
+                border-radius: 12px;
+                margin-top: 8px;
                 padding-top: 10px;
                 background-color: {self.bg_card};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 10px;
+                subcontrol-position: top center;
+                left: 0px;
+                right: 0px;
                 padding: 0 5px 0 5px;
                 color: {self.text_secondary};
+                font-size: 13px;
             }}
         """)
         
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 6, 12, 8)
         layout.setSpacing(8)
         
         combo = QComboBox()
         combo.addItems(options)
         combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 8px;
+                background-color: {self.bg_dark};
+                border: 1px solid {self.border_color};
+                border-radius: 8px;
+                padding: 10px 14px;
                 color: {self.text_primary};
-                min-height: 20px;
+                min-height: 32px;
+                font-size: 13px;
             }}
             QComboBox::drop-down {{
                 border: none;
+                width: 30px;
             }}
             QComboBox::down-arrow {{
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 5px solid {self.text_secondary};
-                margin-right: 10px;
+                border-top: 6px solid {self.text_secondary};
+                margin-right: 8px;
+            }}
+            QComboBox:hover {{
+                border-color: {self.accent};
             }}
             QComboBox QAbstractItemView {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
+                background-color: {self.bg_dark};
+                border: 1px solid {self.border_color};
                 color: {self.text_primary};
                 selection-background-color: {self.accent};
+                selection-color: white;
+                padding: 4px;
             }}
         """)
         
@@ -579,22 +726,26 @@ class MainWindow(QMainWindow):
         group.setStyleSheet(f"""
             QGroupBox {{
                 color: {self.text_primary};
-                font-weight: bold;
-                border: 1px solid #333;
-                border-radius: 8px;
-                margin-top: 10px;
+                font-weight: 600;
+                border: 1px solid {self.border_color};
+                border-radius: 12px;
+                margin-top: 8px;
                 padding-top: 10px;
                 background-color: {self.bg_card};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 10px;
+                subcontrol-position: top center;
+                left: 0px;
+                right: 0px;
                 padding: 0 5px 0 5px;
                 color: {self.text_secondary};
+                font-size: 13px;
             }}
         """)
         
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 6, 12, 8)
         layout.setSpacing(8)
         
         # Create radio buttons for stem count
@@ -603,28 +754,35 @@ class MainWindow(QMainWindow):
         self.stem_count_combo.setCurrentIndex(1)  # Default to 4 stems
         self.stem_count_combo.setStyleSheet(f"""
             QComboBox {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 8px;
+                background-color: {self.bg_dark};
+                border: 1px solid {self.border_color};
+                border-radius: 8px;
+                padding: 10px 14px;
                 color: {self.text_primary};
-                min-height: 20px;
+                min-height: 32px;
+                font-size: 13px;
             }}
             QComboBox::drop-down {{
                 border: none;
+                width: 30px;
             }}
             QComboBox::down-arrow {{
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 5px solid {self.text_secondary};
-                margin-right: 10px;
+                border-top: 6px solid {self.text_secondary};
+                margin-right: 8px;
+            }}
+            QComboBox:hover {{
+                border-color: {self.accent};
             }}
             QComboBox QAbstractItemView {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
+                background-color: {self.bg_dark};
+                border: 1px solid {self.border_color};
                 color: {self.text_primary};
                 selection-background-color: {self.accent};
+                selection-color: white;
+                padding: 4px;
             }}
         """)
         
@@ -637,50 +795,61 @@ class MainWindow(QMainWindow):
         group.setStyleSheet(f"""
             QGroupBox {{
                 color: {self.text_primary};
-                font-weight: bold;
-                border: 1px solid #333;
-                border-radius: 8px;
-                margin-top: 10px;
+                font-weight: 600;
+                border: 1px solid {self.border_color};
+                border-radius: 12px;
+                margin-top: 8px;
                 padding-top: 10px;
                 background-color: {self.bg_card};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                left: 10px;
+                subcontrol-position: top center;
+                left: 0px;
+                right: 0px;
                 padding: 0 5px 0 5px;
                 color: {self.text_secondary};
+                font-size: 13px;
             }}
         """)
         
         layout = QVBoxLayout()
+        layout.setContentsMargins(12, 6, 12, 8)
         layout.setSpacing(8)
         
         self.output_quality_box = QComboBox()
         self.output_quality_box.addItems(["WAV (Lossless)", "MP3 - 320 kbps", "MP3 - 192 kbps"])
         self.output_quality_box.setStyleSheet(f"""
             QComboBox {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 8px;
+                background-color: {self.bg_dark};
+                border: 1px solid {self.border_color};
+                border-radius: 8px;
+                padding: 10px 14px;
                 color: {self.text_primary};
-                min-height: 20px;
+                min-height: 32px;
+                font-size: 13px;
             }}
             QComboBox::drop-down {{
                 border: none;
+                width: 30px;
             }}
             QComboBox::down-arrow {{
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 5px solid {self.text_secondary};
-                margin-right: 10px;
+                border-top: 6px solid {self.text_secondary};
+                margin-right: 8px;
+            }}
+            QComboBox:hover {{
+                border-color: {self.accent};
             }}
             QComboBox QAbstractItemView {{
-                background-color: #2a2a2a;
-                border: 1px solid #444;
+                background-color: {self.bg_dark};
+                border: 1px solid {self.border_color};
                 color: {self.text_primary};
                 selection-background-color: {self.accent};
+                selection-color: white;
+                padding: 4px;
             }}
         """)
         layout.addWidget(self.output_quality_box)
@@ -689,48 +858,87 @@ class MainWindow(QMainWindow):
         return group
     
     def create_folder_group(self):
-        group = QFrame()
-        group.setStyleSheet(f"background-color: {self.bg_card}; border-radius: 8px; padding: 15px;")
-        
-        layout = QVBoxLayout(group)
-        layout.setSpacing(10)
-        
-        # Label
-        label = QLabel("Output folder:")
-        label.setStyleSheet(f"color: {self.text_secondary}; font-size: 14px;")
-        layout.addWidget(label)
-        
-        # Folder path display
-        self.folder_label = QLabel("Default (separated folder in Home)")
-        self.folder_label.setStyleSheet(f"""
-            color: {self.text_primary};
-            font-size: 13px;
-            padding: 8px;
-            background-color: #2a2a2a;
-            border-radius: 4px;
-            border: 1px solid #333;
+        group = QGroupBox("Output folder")
+        group.setMaximumHeight(110)  # Limit maximum height
+        group.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed
+        )
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                color: {self.text_primary};
+                font-weight: 600;
+                border: 1px solid {self.border_color};
+                border-radius: 12px;
+                margin-top: 8px;
+                padding-top: 10px;
+                background-color: {self.bg_card};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                left: 0px;
+                right: 0px;
+                padding: 0 5px 0 5px;
+                color: {self.text_secondary};
+                font-size: 13px;
+            }}
         """)
-        self.folder_label.setWordWrap(True)
-        layout.addWidget(self.folder_label)
+
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 6, 12, 8)
+        layout.setSpacing(6)
+
+        # Container for path with fixed height (no border, just background)
+        path_container = QFrame()
+        path_container.setFixedHeight(40)  # Fixed height
+        path_container.setStyleSheet(f"""
+            QFrame {{
+                background-color: #f7ebd2;
+                border-radius: 8px;
+            }}
+        """)
+        path_layout = QVBoxLayout(path_container)
+        path_layout.setContentsMargins(8, 0, 8, 0)
         
-        # Select folder button
+        self.folder_label = QLabel("C:\\Users\\username\\Documents\\STEM SPLITTER")
+        self.folder_label.setWordWrap(True)
+        self.folder_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.text_primary};
+                font-size: 11px;
+                font-family: "Consolas", "Monospace";
+                qproperty-alignment: 'AlignVCenter | AlignLeft';
+            }}
+        """)
+        self.folder_label.setMaximumHeight(40)  # Limit height
+        path_layout.addWidget(self.folder_label)
+        
+        layout.addWidget(path_container)
+        
+        # Select folder button (make it look like a proper button)
         self.folder_btn = QPushButton("Select Output Folder")
+        self.folder_btn.setFixedHeight(36)
         self.folder_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: #2a2a2a;
-                color: {self.text_primary};
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 8px;
+                background-color: {self.accent};
+                color: #fdf7ec;
+                border: 1px solid #a24822;
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 6px;
             }}
             QPushButton:hover {{
-                background-color: #333;
-                border-color: {self.accent};
+                background-color: {self.accent_hover};
+            }}
+            QPushButton:pressed {{
+                background-color: #a24822;
             }}
         """)
         self.folder_btn.clicked.connect(self.select_output_dir)
         layout.addWidget(self.folder_btn)
-        
+
         return group
     
     def add_files(self):
@@ -756,11 +964,12 @@ class MainWindow(QMainWindow):
         
         # Create list item
         item = QListWidgetItem(self.queue_list)
-        item.setSizeHint(QSize(0, 50))  # Set fixed height for the item
+        item.setSizeHint(QSize(0, 56))  # Set fixed height for the item
         
         # Add widget to list
         self.queue_list.addItem(item)
         self.queue_list.setItemWidget(item, file_widget)
+        
     
     def remove_file(self, file_path):
         """Remove a file from the queue"""
@@ -872,6 +1081,7 @@ class MainWindow(QMainWindow):
     def cancel_processing(self):
         if self.worker:
             self.worker.cancel()
+    
     def start_processing(self):
         if not self.queue:
             QMessageBox.warning(
@@ -892,16 +1102,22 @@ class MainWindow(QMainWindow):
         self.progress_bar.show()
         self.progress_label.setText("0%")
         
-        # Reset output display
-        self.output_path_label.setText("Processing...")
-        self.open_output_btn.setEnabled(False)
+        # Reset progress display
+        self.current_file_label.setText("")
+        self.hardware_label.setText("")
         
         self.current_index = 0
         self.process_next_file()
     
     def update_current_file(self, filename):
-        self.current_file_label.setText(f"Processing: {filename}")
-        self.current_file_label.show()
+        """Update the current file being processed"""
+        if filename:
+            self.current_file_label.setText(f"Processing: {filename}")
+            self.current_file_label.show()
+        else:
+            self.current_file_label.setText("")
+            self.current_file_label.hide()
+    
     def process_next_file(self):
         self.progress_bar.setValue(0)
 
@@ -973,7 +1189,6 @@ class MainWindow(QMainWindow):
             output_dir
         )
         self.worker.current_file.connect(self.update_current_file)
-
         self.worker.progress_changed.connect(self.update_progress)
         self.worker.output_ready.connect(self.show_output_folder)
         self.worker.gpu_memory_update.connect(self.update_hardware_label)  # NEW
