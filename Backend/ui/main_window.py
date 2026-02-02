@@ -33,6 +33,7 @@ class ModernProgressBar(QProgressBar):
                 border-radius: 5px;
             }
         """)
+        
 
 class FileItemWidget(QWidget):
     """Custom widget for file items with delete button"""
@@ -190,6 +191,40 @@ class MainWindow(QMainWindow):
                 width: 0px;
             }}
         """)
+        self.setStyleSheet(self.styleSheet() + f"""
+    QMenuBar {{
+        background-color: {self.bg_card};
+        color: {self.text_primary};
+    }}
+
+    QMenuBar::item {{
+        background: transparent;
+        padding: 6px 12px;
+        color: {self.text_primary};
+    }}
+
+    QMenuBar::item:selected {{
+        background-color: {self.accent};
+        color: white;
+    }}
+
+    QMenu {{
+        background-color: {self.bg_card};
+        color: {self.text_primary};
+        border: 1px solid {self.border_color};
+    }}
+
+    QMenu::item {{
+        padding: 6px 16px;
+        color: {self.text_primary};
+    }}
+
+    QMenu::item:selected {{
+        background-color: {self.accent};
+        color: white;
+    }}
+""")
+
         
         # Queue and state
         self.queue = []  # List of file paths
@@ -199,6 +234,14 @@ class MainWindow(QMainWindow):
         self.gpu_available = self.check_gpu_availability()
         
         self.init_ui()
+        menubar = self.menuBar()
+        help_menu = menubar.addMenu("Help")
+
+        about_action = help_menu.addAction("About")
+        about_action.triggered.connect(self.show_about_dialog)
+
+        contact_action = help_menu.addAction("Contact")
+        contact_action.triggered.connect(self.show_contact_dialog)
     
     def set_app_icon(self):
         """Set the application window icon"""
@@ -552,7 +595,20 @@ class MainWindow(QMainWindow):
         
         # Device combo box
         self.device_box = QComboBox()
-        
+        self.device_box.setEditable(True)              # 👈 MUST come first
+
+        self.device_box.lineEdit().setReadOnly(True)
+        self.device_box.lineEdit().setFrame(False)
+        reason = self.get_gpu_unavailable_reason()
+        if reason:
+            self.device_box.setToolTip(reason)
+            self.device_box.setStyleSheet(f"""
+    QComboBox QLineEdit {{
+        color: {self.text_secondary};
+        background: transparent;
+    }}
+""")
+      
         if self.gpu_available:
             try:
                 import torch
@@ -584,12 +640,13 @@ class MainWindow(QMainWindow):
             }}
             QComboBox::drop-down {{
                 border: none;
+                width:28px
             }}
             QComboBox::down-arrow {{
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 5px solid {self.text_secondary};
+                image: url(assets/dropdown-svgrepo-com.svg);
+                width: 32px;
+                height: 32px;
+              
                 margin-right: 10px;
             }}
             QComboBox:hover {{
@@ -609,6 +666,59 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.device_box)
         group.setLayout(layout)
         return group
+    def show_about_dialog(self):
+        QMessageBox.information(
+            self,
+            "About Stem Splitter",
+            (
+                "<div style='color:#7a5f4b; font-size:13px;'>"
+                "<b style='color:#c45525; font-size:16px;'>STEM SPLITTER</b><br>"
+                "<span style='color:#7a5f4b;'>Version 1.0.0</span><br><br>"
+
+                "© 2026 <b>Rohan Kadiyal</b><br><br>"
+
+                "<b style='color:#2f6f6d;'>License:</b> MIT License<br><br>"
+
+                "<span style='color:#5f4b3a;'>"
+                "This software is provided <i>\"as is\"</i>, without warranty of any kind. "
+                "The author is not responsible for data loss, hardware damage, or any issues "
+                "arising from its use."
+                "</span><br><br>"
+
+                "<b style='color:#2f6f6d;'>Third-party software:</b><br>"
+                "• Demucs (MIT)<br>"
+                "• PyTorch (BSD-style)<br>"
+                "• Qt / PyQt6 (LGPL v3)<br><br>"
+
+                "<span style='font-size:11px; color:#7a5f4b;'>"
+                "Not affiliated with or endorsed by Meta, Facebook, or the Demucs authors."
+                "</span>"
+                "</div>"
+            )
+        )
+    def show_contact_dialog(self):
+        QMessageBox.information(
+            self,
+            "Contact",
+            (
+                "<div style='color:#7a5f4b; font-size:13px;'>"
+                "<b style='color:#c45525; font-size:15px;'>Contact</b><br><br>"
+
+                "For feedback, bugs, or collaboration:<br><br>"
+
+                "<b>Email:</b> "
+                "<span style='color:#2f6f6d;'>rohan.k.codersboutique@gmail.com</span><br><br>"
+
+                "<b>GitHub:</b> "
+                "<span style='color:#2f6f6d;'>https://github.com/ramirocruz07</span><br><br>"
+
+                "<span style='font-size:11px; color:#7a5f4b;'>"
+                "Please include your OS and GPU details when reporting issues."
+                "</span>"
+                "</div>"
+            )
+        )
+
     
     def create_status_group(self):
         group = QFrame()
@@ -695,10 +805,10 @@ class MainWindow(QMainWindow):
                 width: 30px;
             }}
             QComboBox::down-arrow {{
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid {self.text_secondary};
+                image: url(assets/dropdown-svgrepo-com.svg);
+                width: 32px;
+                height: 32px;
+         
                 margin-right: 8px;
             }}
             QComboBox:hover {{
@@ -719,6 +829,8 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(combo)
         group.setLayout(layout)
+        
+        
         return group
     
     def create_stem_count_group(self):
@@ -767,10 +879,10 @@ class MainWindow(QMainWindow):
                 width: 30px;
             }}
             QComboBox::down-arrow {{
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid {self.text_secondary};
+                image: url(assets/dropdown-svgrepo-com.svg);
+                width: 32px;
+                height: 32px;
+          
                 margin-right: 8px;
             }}
             QComboBox:hover {{
@@ -831,13 +943,16 @@ class MainWindow(QMainWindow):
             }}
             QComboBox::drop-down {{
                 border: none;
-                width: 30px;
+                width:30px;
+                
             }}
             QComboBox::down-arrow {{
-                image: none;
+                image: url(assets/dropdown-svgrepo-com.svg);
+                width: 32px;
+                height: 32px;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 6px solid {self.text_secondary};
+            
                 margin-right: 8px;
             }}
             QComboBox:hover {{
@@ -856,6 +971,36 @@ class MainWindow(QMainWindow):
         
         group.setLayout(layout)
         return group
+    
+    
+    def get_gpu_unavailable_reason(self):
+        import torch, platform
+
+        return (
+        "GPU acceleration is unavailable.\n\n"
+        "• Test mode\n"
+        "• CUDA disabled intentionally\n"
+        "• App will run on CPU"
+    )
+
+        system = platform.system()
+
+        if system == "Windows":
+            return (
+                "GPU acceleration is unavailable.\n\n"
+                "Possible reasons:\n"
+                "• No NVIDIA GPU detected\n"
+                "• AMD GPUs are not supported (CUDA is NVIDIA-only)\n"
+                "• NVIDIA drivers are missing or outdated\n\n"
+                "The app will run using CPU instead."
+            )
+
+        return (
+            "GPU acceleration is unavailable.\n\n"
+            "CUDA requires an NVIDIA GPU.\n"
+            "The app will run using CPU instead."
+        )
+
     
     def create_folder_group(self):
         group = QGroupBox("Output folder")
@@ -1027,6 +1172,8 @@ class MainWindow(QMainWindow):
             try:
                 import torch
                 if torch.cuda.is_available():
+                    print(self.get_gpu_unavailable_reason())
+
                     memory_allocated = torch.cuda.memory_allocated() / 1e9
                     memory_reserved = torch.cuda.memory_reserved() / 1e9
                     self.hardware_label.setText(f"GPU Memory: {memory_allocated:.2f}/{memory_reserved:.2f} GB")
@@ -1037,6 +1184,10 @@ class MainWindow(QMainWindow):
     
     def show_output_folder(self, output_folder):
         """Display output folder path and enable open button"""
+        # If these widgets are not present (current UI hides them), just skip
+        if not hasattr(self, "output_path_label") or not hasattr(self, "open_output_btn"):
+            return
+
         if output_folder and os.path.exists(output_folder):
             self.output_path_label.setText(output_folder)
             self.open_output_btn.setEnabled(True)
@@ -1063,6 +1214,9 @@ class MainWindow(QMainWindow):
     
     def open_output_folder(self):
         """Open the output folder in system file explorer"""
+        if not hasattr(self, "output_path_label"):
+            return
+
         output_path = self.output_path_label.text().split('\n')[0]  # Get first line
         if os.path.exists(output_path):
             system = platform.system()
@@ -1091,13 +1245,18 @@ class MainWindow(QMainWindow):
             )
             return
         
+        print(f"DEBUG: Starting processing for {len(self.queue)} files")
+        
+        # Reset state
+        self.current_index = 0
+        
         # Disable UI elements during processing
         self.start_btn.setEnabled(False)
         self.add_btn.setEnabled(False)
         self.folder_btn.setEnabled(False)
         self.queue_list.setEnabled(False)
-        self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
+        
         # Show progress
         self.progress_bar.show()
         self.progress_label.setText("0%")
@@ -1106,7 +1265,16 @@ class MainWindow(QMainWindow):
         self.current_file_label.setText("")
         self.hardware_label.setText("")
         
-        self.current_index = 0
+        # Clean up any existing worker
+        if self.worker:
+            try:
+                self.worker.disconnect()
+                self.worker.deleteLater()
+            except:
+                pass
+            self.worker = None
+        
+        # Start processing first file
         self.process_next_file()
     
     def update_current_file(self, filename):
@@ -1119,15 +1287,21 @@ class MainWindow(QMainWindow):
             self.current_file_label.hide()
     
     def process_next_file(self):
+        print(f"DEBUG: process_next_file called, index: {self.current_index}")
         self.progress_bar.setValue(0)
 
         if self.current_index >= len(self.queue):
+            print(f"DEBUG: No more files to process. Index: {self.current_index}, Queue length: {len(self.queue)}")
             self.on_all_jobs_finished()
             return
         
         # Get current file
         file_path = self.queue[self.current_index]
         file_name = os.path.basename(file_path)
+        print(f"DEBUG: Processing file {self.current_index + 1}/{len(self.queue)}: {file_name}")
+    
+    # Update current file display
+        self.update_current_file(file_name)
      
         
         # Get stem count from combo box
@@ -1196,13 +1370,46 @@ class MainWindow(QMainWindow):
         self.worker.start()
     
     def on_worker_finished(self):
+        """Called when a worker finishes processing one file"""
+        print(f"DEBUG: Worker finished for file {self.current_index + 1} of {len(self.queue)}")
+        
+        # Check if worker was cancelled
         if self.worker and getattr(self.worker, "_cancel_requested", False):
+            print("DEBUG: Worker was cancelled")
             self.on_cancelled()
             return
-        else:
-            self.current_index += 1
-            self.process_next_file()
+        
+        # Move to next file
+        self.current_index += 1
+        
+        # Process next file if any remaining
+        if self.current_index < len(self.queue):
+            print(f"DEBUG: Processing next file {self.current_index + 1}/{len(self.queue)}")
+            # Clean up the worker before starting next one
+            if self.worker:
+                try:
+                    self.worker.disconnect()
+                    self.worker.deleteLater()
+                except:
+                    pass
+                self.worker = None
             
+            # Add a small delay before starting next file
+            QTimer.singleShot(500, self.process_next_file)
+        else:
+            print("DEBUG: All files processed, finishing up")
+            # Clean up worker
+            if self.worker:
+                try:
+                    self.worker.disconnect()
+                    self.worker.deleteLater()
+                except:
+                    pass
+                self.worker = None
+            
+            # Show completion
+            QTimer.singleShot(1000, self.on_all_jobs_finished)
+                
     def on_cancelled(self):
         self.queue.clear()
         self.queue_list.clear()
@@ -1224,20 +1431,33 @@ class MainWindow(QMainWindow):
 
     
     def on_all_jobs_finished(self):
+        """Called when all files are processed"""
+        print("DEBUG: on_all_jobs_finished called")
+        
         # Re-enable UI
         self.start_btn.setEnabled(True)
         self.add_btn.setEnabled(True)
         self.folder_btn.setEnabled(True)
         self.queue_list.setEnabled(True)
         self.cancel_btn.setEnabled(False)
-        self.start_btn.setEnabled(True)
-        # Show completion message
-        QMessageBox.information(
-            self,
-            "Processing Complete",
-            f"Successfully processed {len(self.queue)} file(s)."
-        )
         
-        # Clear queue
+        # Update progress display
+        self.progress_label.setText("Completed!")
+        self.current_file_label.setText("")
+        self.hardware_label.setText("")
+        
+        # Show completion message if we processed any files
+        if len(self.queue) > 0:
+            QMessageBox.information(
+                self,
+                "Processing Complete",
+                f"Successfully processed {len(self.queue)} file(s)."
+            )
+        
+        # Clear queue and reset index
         self.queue.clear()
         self.queue_list.clear()
+        self.current_index = 0  # Reset index for next batch
+        
+        # Reset progress bar after delay
+        QTimer.singleShot(2000, self.reset_progress_display)

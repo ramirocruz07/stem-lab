@@ -30,6 +30,9 @@ class SplitterWorker(QThread):
 
         
     def run(self):
+
+
+
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         separator_path = os.path.join(base_dir, "core", "separator.py")
 
@@ -46,7 +49,7 @@ class SplitterWorker(QThread):
             self.output_dir
         ]
 
-        # Start GPU memory monitoring if using GPU
+        # Start GPU memory monitoring only when running on GPU
         if self.device == "cuda":
             self.start_gpu_monitor()
         
@@ -115,27 +118,49 @@ class SplitterWorker(QThread):
             output_folder = self.get_output_folder()
             if output_folder:
                 self.output_ready.emit(output_folder)
-
+        
         self.finished.emit()
     
     def start_gpu_monitor(self):
-        """Start monitoring GPU memory usage in a separate thread"""
+        """Start monitoring GPU memory usage in a separate thread using nvidia-smi.
+
+        This reads real GPU usage from the system, so it also sees memory used
+        by the Demucs subprocess (not just this Python process).
+        """
         import threading
-        
+        import subprocess as sp
+
         def monitor_gpu():
-            while self.running:
+            while self.running and not self._cancel_requested:
                 try:
-                    import torch
-                    if torch.cuda.is_available():
-                        memory_allocated = torch.cuda.memory_allocated() / 1e9
-                        memory_reserved = torch.cuda.memory_reserved() / 1e9
-                        memory_text = f"GPU: {memory_allocated:.2f}/{memory_reserved:.2f} GB"
-                        self.gpu_memory_update.emit(memory_text)
-                except:
-                    pass
-                time.sleep(2)  # Update every 2 seconds
-        
-        # Start monitoring thread
+                    # Query used/total memory (in MB) for GPU 0
+                    result = sp.run(
+                        ["nvidia-smi",
+                         "--query-gpu=memory.used,memory.total",
+                         "--format=csv,nounits,noheader"],
+                        capture_output=True,
+                        text=True,
+                        timeout=1,
+                    )
+                    if result.returncode == 0:
+                        line = result.stdout.strip().splitlines()[0]
+                        parts = [p.strip() for p in line.split(",")]
+                        if len(parts) == 2:
+                            used_mb = float(parts[0])
+                            total_mb = float(parts[1])
+                            used_gb = used_mb / 1024.0
+                            total_gb = total_mb / 1024.0
+                            memory_text = f"GPU Memory: {used_gb:.2f}/{total_gb:.2f} GB"
+                            self.gpu_memory_update.emit(memory_text)
+                except (FileNotFoundError, sp.TimeoutExpired, ValueError, IndexError):
+                    # nvidia-smi not available or output unexpected; just stop trying
+                    break
+                except Exception:
+                    # Any other unexpected error: don't crash the app, just stop updates
+                    break
+
+                time.sleep(1.5)  # Update roughly every 1.5 seconds
+
         monitor_thread = threading.Thread(target=monitor_gpu, daemon=True)
         monitor_thread.start()
     
