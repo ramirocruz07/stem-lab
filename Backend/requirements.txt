@@ -1,0 +1,7 @@
+PyQt6
+torch
+torchaudio
+demucs
+soundfile
+torchcodec
+pyinstaller
