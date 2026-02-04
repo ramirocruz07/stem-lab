@@ -3,6 +3,7 @@ import sys
 import subprocess
 import re
 import time
+import platform
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class SplitterWorker(QThread):
@@ -11,6 +12,7 @@ class SplitterWorker(QThread):
     output_ready = pyqtSignal(str)
     gpu_memory_update = pyqtSignal(str)  # New signal for GPU memory updates
     current_file = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)  # Signal for error messages
 
     def __init__(self, file, stems, quality, audio_format, bitrate, device, output_dir):
         super().__init__()
@@ -26,100 +28,351 @@ class SplitterWorker(QThread):
         self.process = None
         self._cancel_requested = False
 
-        
-
-        
     def run(self):
+        try:
+            # Start GPU memory monitoring only when running on GPU
+            if self.device == "cuda":
+                self.start_gpu_monitor()
+            
+            print(f"\n[START] Starting separation: {os.path.basename(self.file)}")
+            print(f"[INFO] Settings: {self.stems} stems, {self.quality} quality, {self.audio_format} format, Device: {self.device}")
+            filename = os.path.basename(self.file)
+            self.current_file.emit(filename)
+            
+            # Handle frozen executable (PyInstaller) vs normal Python execution
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                # When frozen, we can't easily run separator.py as subprocess
+                # Instead, import and run it directly, capturing stdout
+                try:
+                    from core import separator
+                    
+                    # Custom stdout class to capture output
+                    class OutputCapture:
+                        """
+                        Lightweight stdout replacement used when running under PyInstaller.
+                        NOTE: In a windowed build sys.stdout/sys.__stdout__ can be None,
+                        so all writes to the "real" stdout must be optional.
+                        """
 
-
-
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        separator_path = os.path.join(base_dir, "core", "separator.py")
-
-        cmd = [
-            sys.executable,
-            "-u", 
-            separator_path,
-            self.file,
-            str(self.stems),
-            self.quality,
-            self.audio_format,
-            self.bitrate,
-            self.device,
-            self.output_dir
-        ]
-
-        # Start GPU memory monitoring only when running on GPU
-        if self.device == "cuda":
-            self.start_gpu_monitor()
-        
-        print(f"\n🚀 Starting separation: {os.path.basename(self.file)}")
-        print(f"📊 Settings: {self.stems} stems, {self.quality} quality, {self.audio_format} format, Device: {self.device}")
-        filename = os.path.basename(self.file)
-        self.current_file.emit(filename)
-        self.process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
-        )
-
-        buffer = ""
-
-        while True:
-            # ✅ Cancel support
-            if self._cancel_requested:
-                break
-
-            char = self.process.stdout.read(1)
-            if not char:
-                break
-
-            if char in ("\r", "\n"):
-                line = buffer.strip()
-                buffer = ""
-
-                if not line:
-                    continue
-
-                # Progress parsing
-                percent = self.extract_percentage(line)
-                if percent is not None and percent > self.last_progress:
-                    self.progress_changed.emit(percent)
-                    self.last_progress = percent
-
-                # Output folder detection
-                if 'writing to' in line.lower() or 'saved to' in line.lower():
-                    folder_match = re.search(
-                        r'writing to (.+)|saved to (.+)',
-                        line,
-                        re.IGNORECASE
-                    )
-                    if folder_match:
-                        folder_path = folder_match.group(1) or folder_match.group(2)
-                        if folder_path and os.path.exists(folder_path):
-                            self.output_ready.emit(folder_path)
-
+                        def __init__(self, worker):
+                            self.worker = worker
+                            self.buffer = ""
+                            # Prefer the real console stdout if it exists, otherwise None
+                            self.original_stdout = getattr(sys, "__stdout__", None) or getattr(sys, "stdout", None)
+                        
+                        def write(self, text):
+                            # Best‑effort write to original stdout (if any)
+                            if self.original_stdout is not None:
+                                try:
+                                    self.original_stdout.write(text)
+                                    self.original_stdout.flush()
+                                except Exception:
+                                    # Never crash the app if console writing fails
+                                    pass
+                            
+                            # Add to buffer and process lines for progress/output parsing
+                            self.buffer += text
+                            while '\n' in self.buffer or '\r' in self.buffer:
+                                if '\n' in self.buffer:
+                                    line, self.buffer = self.buffer.split('\n', 1)
+                                elif '\r' in self.buffer:
+                                    line, self.buffer = self.buffer.split('\r', 1)
+                                else:
+                                    break
+                                
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                
+                                # Progress parsing
+                                percent = self.worker.extract_percentage(line)
+                                if percent is not None and percent > self.worker.last_progress:
+                                    self.worker.progress_changed.emit(percent)
+                                    self.worker.last_progress = percent
+                                
+                                # Output folder detection
+                                if 'writing to' in line.lower() or 'saved to' in line.lower():
+                                    folder_match = re.search(
+                                        r'writing to (.+)|saved to (.+)',
+                                        line,
+                                        re.IGNORECASE
+                                    )
+                                    if folder_match:
+                                        folder_path = folder_match.group(1) or folder_match.group(2)
+                                        if folder_path and os.path.exists(folder_path):
+                                            self.worker.output_ready.emit(folder_path)
+                        
+                        def flush(self):
+                            if self.original_stdout is not None:
+                                try:
+                                    self.original_stdout.flush()
+                                except Exception:
+                                    pass
+                    
+                    # Set up sys.argv and redirect stdout
+                    original_argv = sys.argv[:]
+                    sys.argv = [
+                        'separator.py',
+                        self.file,
+                        str(self.stems),
+                        self.quality,
+                        self.audio_format,
+                        self.bitrate,
+                        self.device,
+                        self.output_dir
+                    ]
+                    
+                    # Capture stdout
+                    capture = OutputCapture(self)
+                    sys.stdout = capture
+                    
+                    try:
+                        # Run separator.main()
+                        separator.main()
+                    finally:
+                        # Restore stdout and argv
+                        sys.stdout = capture.original_stdout
+                        sys.argv = original_argv
+                    
+                    # Emit final progress
+                    if not self._cancel_requested and self.last_progress < 100:
+                        self.progress_changed.emit(100)
+                    
+                    # Final output folder fallback
+                    if not self._cancel_requested:
+                        output_folder = self.get_output_folder()
+                        if output_folder:
+                            self.output_ready.emit(output_folder)
+                    
+                    self.running = False
+                    self.finished.emit()
+                    return
+                    
+                except Exception as e:
+                    error_msg = f"Error running separator: {str(e)}"
+                    print(f"[ERROR] Error running separator directly: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # In frozen mode, don't fall back to subprocess as it would spawn another exe
+                    # Just emit error and finish
+                    self.running = False
+                    self.error_occurred.emit(error_msg)
+                    self.finished.emit()
+                    return
             else:
-                buffer += char
+                # Normal Python execution - use subprocess
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                separator_path = os.path.join(base_dir, "core", "separator.py")
+                
+                # Check if separator.py exists
+                if not os.path.exists(separator_path):
+                    error_msg = f"Separator script not found at: {separator_path}"
+                    print(f"[ERROR] {error_msg}")
+                    self.error_occurred.emit(error_msg)
+                    self.running = False
+                    self.finished.emit()
+                    return
 
-        # Process ended or cancelled
-        self.process.wait()
-        self.running = False
+                cmd = [
+                    sys.executable,
+                    "-u", 
+                    separator_path,
+                    self.file,
+                    str(self.stems),
+                    self.quality,
+                    self.audio_format,
+                    self.bitrate,
+                    self.device,
+                    self.output_dir
+                ]
+            
+            # Create subprocess to run separator (only if not already returned)
+            # Prevent console window from appearing on Windows
+            creation_flags = 0
+            if platform.system() == "Windows":
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            
+            try:
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True,
+                    creationflags=creation_flags
+                )
+            except FileNotFoundError as e:
+                error_msg = f"Failed to start process: {str(e)}\n\nPlease ensure Python is properly installed and accessible."
+                print(f"[ERROR] {error_msg}")
+                self.error_occurred.emit(error_msg)
+                self.running = False
+                self.finished.emit()
+                return
+            except Exception as e:
+                error_msg = f"Failed to start subprocess: {str(e)}"
+                print(f"[ERROR] {error_msg}")
+                self.error_occurred.emit(error_msg)
+                self.running = False
+                self.finished.emit()
+                return
 
-        # Emit final progress only if not cancelled
-        if not self._cancel_requested and self.last_progress < 100:
-            self.progress_changed.emit(100)
+            buffer = ""
+            process_ended = False
 
-        # Final output folder fallback
-        if not self._cancel_requested:
-            output_folder = self.get_output_folder()
-            if output_folder:
-                self.output_ready.emit(output_folder)
-        
-        self.finished.emit()
+            while True:
+                # ✅ Cancel support
+                if self._cancel_requested:
+                    break
+
+                # Check if process has ended
+                poll_result = self.process.poll()
+                if poll_result is not None:
+                    process_ended = True
+                    # Read any remaining output
+                    try:
+                        remaining = self.process.stdout.read()
+                        if remaining:
+                            buffer += remaining
+                            # Process remaining buffer
+                            for line in buffer.splitlines():
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                print(f"[OUTPUT] {line}")  # Debug output
+                                # Progress parsing
+                                percent = self.extract_percentage(line)
+                                if percent is not None and percent > self.last_progress:
+                                    self.progress_changed.emit(percent)
+                                    self.last_progress = percent
+                                # Output folder detection
+                                if 'writing to' in line.lower() or 'saved to' in line.lower():
+                                    folder_match = re.search(
+                                        r'writing to (.+)|saved to (.+)',
+                                        line,
+                                        re.IGNORECASE
+                                    )
+                                    if folder_match:
+                                        folder_path = folder_match.group(1) or folder_match.group(2)
+                                        if folder_path and os.path.exists(folder_path):
+                                            self.output_ready.emit(folder_path)
+                    except Exception as e:
+                        print(f"[WARNING] Error reading remaining output: {e}")
+                    break
+
+                try:
+                    char = self.process.stdout.read(1)
+                    if not char:
+                        # No more data available right now
+                        # Check if process ended
+                        if self.process.poll() is not None:
+                            process_ended = True
+                            break
+                        # Small delay to avoid busy waiting
+                        time.sleep(0.05)
+                        continue
+
+                    if char in ("\r", "\n"):
+                        line = buffer.strip()
+                        buffer = ""
+
+                        if not line:
+                            continue
+
+                        print(f"[OUTPUT] {line}")  # Debug output
+                        # Progress parsing
+                        percent = self.extract_percentage(line)
+                        if percent is not None and percent > self.last_progress:
+                            self.progress_changed.emit(percent)
+                            self.last_progress = percent
+
+                        # Output folder detection
+                        if 'writing to' in line.lower() or 'saved to' in line.lower():
+                            folder_match = re.search(
+                                r'writing to (.+)|saved to (.+)',
+                                line,
+                                re.IGNORECASE
+                            )
+                            if folder_match:
+                                folder_path = folder_match.group(1) or folder_match.group(2)
+                                if folder_path and os.path.exists(folder_path):
+                                    self.output_ready.emit(folder_path)
+
+                    else:
+                        buffer += char
+                except Exception as e:
+                    print(f"[WARNING] Error reading process output: {e}")
+                    # Check if process ended
+                    if self.process.poll() is not None:
+                        process_ended = True
+                        break
+                    time.sleep(0.1)
+
+            # Process ended or cancelled
+            return_code = self.process.wait() if not process_ended else self.process.returncode
+            self.running = False
+
+            # Check if process failed
+            if return_code != 0 and not self._cancel_requested:
+                # If process exited immediately with error, try to get error message from stderr or output
+                error_details = ""
+                try:
+                    # Try to read any error output
+                    if hasattr(self.process, 'stderr') and self.process.stderr:
+                        error_output = self.process.stderr.read()
+                        if error_output:
+                            error_details = f"\n\nError details: {error_output[:500]}"  # Limit length
+                except:
+                    pass
+                
+                if self.last_progress == 0:
+                    # Process failed immediately - likely demucs not found or invalid command
+                    error_msg = (
+                        f"Processing failed immediately (return code {return_code}).\n\n"
+                        f"This usually means:\n"
+                        f"- 'demucs' command is not installed or not in PATH\n"
+                        f"- The input file is invalid or inaccessible\n"
+                        f"- Required dependencies are missing\n\n"
+                        f"Please check the console output for more details.{error_details}"
+                    )
+                else:
+                    # Process started but failed later
+                    error_msg = (
+                        f"Processing failed with return code {return_code}.\n\n"
+                        f"Progress reached: {self.last_progress}%\n"
+                        f"Please check the console output for more details.{error_details}"
+                    )
+                
+                print(f"[ERROR] {error_msg}")
+                self.error_occurred.emit(error_msg)
+                self.finished.emit()
+                return
+
+            # Emit final progress only if not cancelled
+            if not self._cancel_requested and self.last_progress < 100:
+                self.progress_changed.emit(100)
+
+            # Final output folder fallback
+            if not self._cancel_requested:
+                output_folder = self.get_output_folder()
+                if output_folder:
+                    self.output_ready.emit(output_folder)
+
+            self.running = False
+            self.finished.emit()
+            
+        except Exception as e:
+            # Catch any errors to prevent app crash
+            error_msg = f"Error during processing: {str(e)}"
+            print(f"[ERROR] Error in worker.run(): {e}")
+            import traceback
+            traceback.print_exc()
+            self.running = False
+            # Emit error signal so UI can show it to user
+            self.error_occurred.emit(error_msg)
+            # Still emit finished so UI can recover
+            self.finished.emit()
     
     def start_gpu_monitor(self):
         """Start monitoring GPU memory usage in a separate thread using nvidia-smi.
@@ -188,6 +441,7 @@ class SplitterWorker(QThread):
             pass
         
         return None
+    
     def cancel(self):
         self._cancel_requested = True
 

@@ -125,10 +125,44 @@ class FileItemWidget(QWidget):
         self.delete_requested.emit(self.filepath)
 
 class MainWindow(QMainWindow):
+    def get_asset_path(self, filename):
+        """Get absolute path to an asset file, works in both dev and PyInstaller"""
+        import sys
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            base_path = sys._MEIPASS
+        else:
+            # Running as normal Python script
+            script_dir = os.path.dirname(os.path.abspath(__file__))  # Backend/ui/
+            base_path = os.path.dirname(script_dir)  # Backend/
+        return os.path.join(base_path, "assets", filename)
+    
+    def get_asset_url(self, filename):
+        """Get file:// URL for an asset file for use in Qt CSS"""
+        path = self.get_asset_path(filename)
+        # Convert Windows path to file:// URL format for Qt CSS
+        # Qt CSS requires file:/// format on Windows
+        # C:\path\to\file.svg -> file:///C:/path/to/file.svg
+        path = os.path.normpath(path)
+        path = path.replace('\\', '/')
+        # Ensure it starts with / for absolute paths
+        if ':' in path and not path.startswith('/'):
+            # Windows path like C:/path -> /C:/path
+            drive, rest = path.split(':', 1)
+            path = f"/{drive}:{rest}"
+        return f"file://{path}"
+    
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("STEM SPLITTER")
+        import sys
+        exe_name = os.path.basename(sys.executable).lower()
+        if 'lite' in exe_name:
+            version_text = "STEM SPLITTER LITE (CPU Only)"
+        elif 'pro' in exe_name:
+            version_text = "STEM SPLITTER PRO (GPU Supported)"
+        else:
+            version_text = "STEM SPLITTER"
         
+        self.setWindowTitle(version_text)
         # Set application icon/logo
         self.set_app_icon()
         
@@ -232,6 +266,8 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.output_dir = None
         self.gpu_available = self.check_gpu_availability()
+        self.is_processing = False  # Guard to prevent multiple starts
+        self.error_shown = False  # Prevent showing multiple error dialogs
         
         self.init_ui()
         menubar = self.menuBar()
@@ -271,18 +307,18 @@ class MainWindow(QMainWindow):
                         # Also set for the application
                         QApplication.setWindowIcon(icon)
                         icon_set = True
-                        print(f"✅ Application icon set from: {logo_path}")
+                        print(f"[OK] Application icon set from: {logo_path}")
                         break
                 except Exception as e:
-                    print(f"⚠️  Error loading icon from {logo_path}: {e}")
+                    print(f"[WARNING] Error loading icon from {logo_path}: {e}")
                     continue
         
         if not icon_set:
-            print(f"⚠️  Logo file not found in assets folder.")
+            print(f"[WARNING] Logo file not found in assets folder.")
             print(f"   Looking in: {assets_dir}")
             print(f"   Tried paths:")
             for lp in logo_paths:
-                exists = "✓" if os.path.exists(lp) else "✗"
+                exists = "[OK]" if os.path.exists(lp) else "[NOT FOUND]"
                 print(f"     {exists} {lp}")
             print("   Using default icon.")
     
@@ -293,13 +329,13 @@ class MainWindow(QMainWindow):
             if torch.cuda.is_available():
                 gpu_name = torch.cuda.get_device_name(0)
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-                print(f"✅ GPU Available: {gpu_name} ({gpu_memory:.1f} GB)")
+                print(f"[OK] GPU Available: {gpu_name} ({gpu_memory:.1f} GB)")
                 return True
             else:
-                print("⚠️  No GPU available, using CPU only")
+                print("[WARNING] No GPU available, using CPU only")
                 return False
         except Exception as e:
-            print(f"⚠️  Error checking GPU: {e}")
+            print(f"[WARNING] Error checking GPU: {e}")
             return False
         
     def init_ui(self):
@@ -516,13 +552,13 @@ class MainWindow(QMainWindow):
         progress_container_layout.addWidget(self.current_file_label)
         
         # Hardware Usage Label (no border)
-        self.hardware_label = QLabel("")
-        self.hardware_label.setStyleSheet(
-            f"color: {self.text_secondary}; font-size: 11px; text-align: center; "
-            f"background: transparent; border: none;"
-        )
-        self.hardware_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        progress_container_layout.addWidget(self.hardware_label)
+        # self.hardware_label = QLabel("")
+        # self.hardware_label.setStyleSheet(
+        #     f"color: {self.text_secondary}; font-size: 11px; text-align: center; "
+        #     f"background: transparent; border: none;"
+        # )
+        # self.hardware_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # progress_container_layout.addWidget(self.hardware_label)
         
         right_layout.addWidget(progress_container)
         
@@ -595,19 +631,12 @@ class MainWindow(QMainWindow):
         
         # Device combo box
         self.device_box = QComboBox()
-        self.device_box.setEditable(True)              # 👈 MUST come first
-
-        self.device_box.lineEdit().setReadOnly(True)
-        self.device_box.lineEdit().setFrame(False)
+        # Make it non-editable so users can select from dropdown
+        self.device_box.setEditable(False)
+        
         reason = self.get_gpu_unavailable_reason()
         if reason:
             self.device_box.setToolTip(reason)
-            self.device_box.setStyleSheet(f"""
-    QComboBox QLineEdit {{
-        color: {self.text_secondary};
-        background: transparent;
-    }}
-""")
       
         if self.gpu_available:
             try:
@@ -628,6 +657,10 @@ class MainWindow(QMainWindow):
                 if "GPU" in self.device_box.itemText(i):
                     self.device_box.model().item(i).setEnabled(False)
         
+        # Try to set dropdown icon - use absolute path directly
+        dropdown_icon_path = self.get_asset_path("dropdown-svgrepo-com.svg")
+        # Convert path for CSS (escape backslashes and use forward slashes)
+        css_path = dropdown_icon_path.replace('\\', '/')
         self.device_box.setStyleSheet(f"""
             QComboBox {{
                 background-color: #f7ebd2;
@@ -643,11 +676,9 @@ class MainWindow(QMainWindow):
                 width:28px
             }}
             QComboBox::down-arrow {{
-                image: url(assets/dropdown-svgrepo-com.svg);
-                width: 32px;
-                height: 32px;
-              
-                margin-right: 10px;
+                image: url({css_path});
+                width: 16px;
+                height: 16px;
             }}
             QComboBox:hover {{
                 border-color: {self.accent};
@@ -738,13 +769,13 @@ class MainWindow(QMainWindow):
                 import torch
                 gpu_name = torch.cuda.get_device_name(0)
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-                status_text = f"✅ GPU Available\n{gpu_name}\n{gpu_memory:.1f} GB VRAM"
+                status_text = f"GPU Available\n{gpu_name}\n{gpu_memory:.1f} GB VRAM"
                 color = "#4CAF50"
             except:
-                status_text = "✅ GPU Available"
+                status_text = "GPU Available"
                 color = "#4CAF50"
         else:
-            status_text = "⚠️  CPU Only Mode"
+            status_text = "CPU Only Mode"
             color = "#FF9800"
         
         self.status_label = QLabel(status_text)
@@ -790,6 +821,8 @@ class MainWindow(QMainWindow):
         
         combo = QComboBox()
         combo.addItems(options)
+        dropdown_icon_path = self.get_asset_path("dropdown-svgrepo-com.svg")
+        css_path = dropdown_icon_path.replace('\\', '/')
         combo.setStyleSheet(f"""
             QComboBox {{
                 background-color: {self.bg_dark};
@@ -805,11 +838,9 @@ class MainWindow(QMainWindow):
                 width: 30px;
             }}
             QComboBox::down-arrow {{
-                image: url(assets/dropdown-svgrepo-com.svg);
-                width: 32px;
-                height: 32px;
-         
-                margin-right: 8px;
+                image: url({css_path});
+                width: 16px;
+                height: 16px;
             }}
             QComboBox:hover {{
                 border-color: {self.accent};
@@ -864,6 +895,8 @@ class MainWindow(QMainWindow):
         self.stem_count_combo = QComboBox()
         self.stem_count_combo.addItems(["2 Stems (Vocals + Instrumental)", "4 Stems (Default)", "6 Stems"])
         self.stem_count_combo.setCurrentIndex(1)  # Default to 4 stems
+        dropdown_icon_path = self.get_asset_path("dropdown-svgrepo-com.svg")
+        css_path = dropdown_icon_path.replace('\\', '/')
         self.stem_count_combo.setStyleSheet(f"""
             QComboBox {{
                 background-color: {self.bg_dark};
@@ -879,11 +912,9 @@ class MainWindow(QMainWindow):
                 width: 30px;
             }}
             QComboBox::down-arrow {{
-                image: url(assets/dropdown-svgrepo-com.svg);
-                width: 32px;
-                height: 32px;
-          
-                margin-right: 8px;
+                image: url({css_path});
+                width: 16px;
+                height: 16px;
             }}
             QComboBox:hover {{
                 border-color: {self.accent};
@@ -931,6 +962,8 @@ class MainWindow(QMainWindow):
         
         self.output_quality_box = QComboBox()
         self.output_quality_box.addItems(["WAV (Lossless)", "MP3 - 320 kbps", "MP3 - 192 kbps"])
+        dropdown_icon_path = self.get_asset_path("dropdown-svgrepo-com.svg")
+        css_path = dropdown_icon_path.replace('\\', '/')
         self.output_quality_box.setStyleSheet(f"""
             QComboBox {{
                 background-color: {self.bg_dark};
@@ -944,16 +977,11 @@ class MainWindow(QMainWindow):
             QComboBox::drop-down {{
                 border: none;
                 width:30px;
-                
             }}
             QComboBox::down-arrow {{
-                image: url(assets/dropdown-svgrepo-com.svg);
-                width: 32px;
-                height: 32px;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-            
-                margin-right: 8px;
+                image: url({css_path});
+                width: 16px;
+                height: 16px;
             }}
             QComboBox:hover {{
                 border-color: {self.accent};
@@ -1172,11 +1200,11 @@ class MainWindow(QMainWindow):
             try:
                 import torch
                 if torch.cuda.is_available():
-                    print(self.get_gpu_unavailable_reason())
-
                     memory_allocated = torch.cuda.memory_allocated() / 1e9
                     memory_reserved = torch.cuda.memory_reserved() / 1e9
                     self.hardware_label.setText(f"GPU Memory: {memory_allocated:.2f}/{memory_reserved:.2f} GB")
+                else:
+                    self.hardware_label.setText("Using GPU (fallback to CPU)")
             except:
                 self.hardware_label.setText("Using GPU")
         else:
@@ -1237,6 +1265,10 @@ class MainWindow(QMainWindow):
             self.worker.cancel()
     
     def start_processing(self):
+        # Prevent multiple starts
+        if self.is_processing:
+            return
+        
         if not self.queue:
             QMessageBox.warning(
                 self,
@@ -1244,6 +1276,10 @@ class MainWindow(QMainWindow):
                 "Please add at least one audio file to the queue."
             )
             return
+        
+        # Set processing flag and reset error flag
+        self.is_processing = True
+        self.error_shown = False
         
         print(f"DEBUG: Starting processing for {len(self.queue)} files")
         
@@ -1366,8 +1402,29 @@ class MainWindow(QMainWindow):
         self.worker.progress_changed.connect(self.update_progress)
         self.worker.output_ready.connect(self.show_output_folder)
         self.worker.gpu_memory_update.connect(self.update_hardware_label)  # NEW
+        self.worker.error_occurred.connect(self.on_worker_error)
         self.worker.finished.connect(self.on_worker_finished)
         self.worker.start()
+    
+    def on_worker_error(self, error_message):
+        """Called when a worker encounters an error"""
+        print(f"DEBUG: Worker error: {error_message}")
+        
+        # Prevent showing multiple error dialogs
+        if self.error_shown:
+            return
+        self.error_shown = True
+        
+        QMessageBox.critical(
+            self,
+            "Processing Error",
+            f"An error occurred while processing:\n\n{error_message}\n\nPlease check:\n"
+            "- If 'demucs' is installed and accessible\n"
+            "- If the input file is valid\n"
+            "- Console output for more details"
+        )
+        # Stop processing on error
+        self.on_cancelled()
     
     def on_worker_finished(self):
         """Called when a worker finishes processing one file"""
@@ -1378,6 +1435,10 @@ class MainWindow(QMainWindow):
             print("DEBUG: Worker was cancelled")
             self.on_cancelled()
             return
+        
+        # Check if there was an error (worker might have finished due to error)
+        # Errors are handled by on_worker_error, so if we get here without cancellation,
+        # assume success and continue
         
         # Move to next file
         self.current_index += 1
@@ -1411,12 +1472,17 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(1000, self.on_all_jobs_finished)
                 
     def on_cancelled(self):
-        self.queue.clear()
-        self.queue_list.clear()
+        self.is_processing = False  # Reset processing flag
+        self.error_shown = False  # Reset error flag
+        
+        # Don't clear queue on cancellation - let user decide
+        # self.queue.clear()
+        # self.queue_list.clear()
 
         self.progress_bar.setValue(0)
         self.progress_label.setText("Cancelled")
         self.current_file_label.setText("")
+        self.hardware_label.setText("")
 
         self.start_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
@@ -1433,6 +1499,9 @@ class MainWindow(QMainWindow):
     def on_all_jobs_finished(self):
         """Called when all files are processed"""
         print("DEBUG: on_all_jobs_finished called")
+        
+        # Reset processing flag
+        self.is_processing = False
         
         # Re-enable UI
         self.start_btn.setEnabled(True)
