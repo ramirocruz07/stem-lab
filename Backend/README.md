@@ -11,6 +11,21 @@ It is built using Python, PyQt6, and Demucs.
 - Clean, modern desktop UI
 - Works fully offline
 
+  ---
+
+## 📸 Application Preview
+
+### Main Interface
+![Main UI](screenshots/main-ui.png)
+
+### Processing Queue
+![Processing Screen](screenshots/processing.png)
+
+### Output Structure
+![Output Folder](screenshots/output.png)
+
+---
+
 ## Requirements
 - Python 3.9 or later
 - Windows 10/11 (64-bit)
