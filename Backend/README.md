@@ -16,13 +16,13 @@ It is built using Python, PyQt6, and Demucs.
 ## 📸 Application Preview
 
 ### Main Interface
-![Main UI](screenshots/main-ui.png)
+![Main UI](ui/main-ui.png)
 
 ### Processing Queue
-![Processing Screen](screenshots/processing.png)
+![Processing Screen](ui/processing.png)
 
 ### Output Structure
-![Output Folder](screenshots/output.png)
+![Output Folder](ui/output.png)
 
 ---
 
